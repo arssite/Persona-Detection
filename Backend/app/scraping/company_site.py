@@ -5,8 +5,10 @@ from dataclasses import dataclass
 from urllib.parse import urljoin, urlparse
 
 import httpx
+from html.parser import HTMLParser
 
 from app.utils.text import normalize_whitespace
+from app.scraping.robots import fetch_robots
 
 
 @dataclass(frozen=True)
@@ -23,13 +25,49 @@ def _extract_title(html: str) -> str | None:
     return normalize_whitespace(re.sub(r"<[^>]+>", " ", m.group(1)))
 
 
+class _LinkAndTextParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.links: list[str] = []
+        self._texts: list[str] = []
+        self._skip_depth = 0
+
+    def handle_starttag(self, tag: str, attrs):
+        t = tag.lower()
+        if t in {"script", "style", "noscript"}:
+            self._skip_depth += 1
+        if t == "a":
+            for k, v in attrs:
+                if k.lower() == "href" and v:
+                    self.links.append(v)
+
+    def handle_endtag(self, tag: str):
+        t = tag.lower()
+        if t in {"script", "style", "noscript"} and self._skip_depth > 0:
+            self._skip_depth -= 1
+
+    def handle_data(self, data: str):
+        if self._skip_depth > 0:
+            return
+        if data and data.strip():
+            self._texts.append(data.strip())
+
+    def text(self) -> str:
+        return normalize_whitespace(" ".join(self._texts))
+
+
 def html_to_text(html: str) -> str:
-    # lightweight cleaning; remove scripts/styles and tags
-    html = re.sub(r"<script[\s\S]*?</script>", " ", html, flags=re.I)
-    html = re.sub(r"<style[\s\S]*?</style>", " ", html, flags=re.I)
-    html = re.sub(r"<!--([\s\S]*?)-->", " ", html)
-    html = re.sub(r"<[^>]+>", " ", html)
-    return normalize_whitespace(html)
+    """Dependency-light text extraction.
+
+    This is less powerful than trafilatura/readability, but avoids installing
+    compiled dependencies on Windows.
+    """
+    parser = _LinkAndTextParser()
+    try:
+        parser.feed(html)
+        return parser.text()
+    finally:
+        parser.close()
 
 
 def _same_host(a: str, b: str) -> bool:
@@ -37,15 +75,26 @@ def _same_host(a: str, b: str) -> bool:
 
 
 def _extract_links(base_url: str, html: str) -> list[str]:
-    links = []
-    for href in re.findall(r"href=\"([^\"]+)\"", html, flags=re.I):
+    parser = _LinkAndTextParser()
+    try:
+        parser.feed(html)
+        raw_links = parser.links
+    finally:
+        parser.close()
+
+    links: list[str] = []
+    for href in raw_links:
+        href = (href or "").strip()
+        if not href:
+            continue
         if href.startswith("#") or href.startswith("mailto:") or href.startswith("javascript:"):
             continue
         abs_url = urljoin(base_url, href)
         if abs_url.startswith("http") and _same_host(base_url, abs_url):
             links.append(abs_url)
+
     # de-dupe
-    out = []
+    out: list[str] = []
     seen = set()
     for u in links:
         if u not in seen:
@@ -54,7 +103,7 @@ def _extract_links(base_url: str, html: str) -> list[str]:
     return out
 
 
-async def scrape_company_site(domain: str, *, timeout_s: float = 15.0, max_pages: int = 4) -> list[PageText]:
+async def scrape_company_site(domain: str, *, timeout_s: float = 15.0, max_pages: int = 8) -> list[PageText]:
     """Fetch a small set of pages from a company domain.
 
     This is intentionally conservative for MVP demo stability.
@@ -73,11 +122,19 @@ async def scrape_company_site(domain: str, *, timeout_s: float = 15.0, max_pages
     visited: set[str] = set()
     queue: list[str] = seed_urls[:]
 
+    robots = await fetch_robots(base)
+
     async with httpx.AsyncClient(follow_redirects=True, timeout=timeout_s, headers=headers) as client:
         while queue and len(pages) < max_pages:
             url = queue.pop(0)
             if url in visited:
                 continue
+
+            # Respect robots.txt (user-agent: *)
+            if not robots.allowed(url, user_agent="*"):
+                visited.add(url)
+                continue
+
             visited.add(url)
 
             try:

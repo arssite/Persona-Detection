@@ -7,6 +7,8 @@ import { EvidenceBreakdownChart } from "./components/EvidenceBreakdownChart";
 import { JsonDetails } from "./components/JsonDetails";
 import { BubbleLoader } from "./components/BubbleLoader";
 import { UseCasesRotator } from "./components/UseCasesRotator";
+import { Card } from "./components/Card";
+import { GitHubCard } from "./components/GitHubCard";
 
 function App() {
   const [email, setEmail] = useState("");
@@ -109,20 +111,97 @@ function App() {
             </section>
           </div>
 
+          <Card title="One-minute brief">
+            <div>{data.one_minute_brief ?? "unknown"}</div>
+          </Card>
+
+          <section className="card">
+            <div className="cardTitle">Company profile</div>
+            <div>
+              <strong>Summary:</strong> {data.company_profile?.summary ?? "unknown"}
+            </div>
+            <div style={{ height: 8 }} />
+            <div>
+              <strong>Likely products/services</strong>
+              <ul className="list">
+                {(data.company_profile?.likely_products_services ?? []).map((x, i) => (
+                  <li key={i}>{x}</li>
+                ))}
+              </ul>
+            </div>
+            <div>
+              <strong>Hiring signals</strong>
+              <ul className="list">
+                {(data.company_profile?.hiring_signals ?? []).map((x, i) => (
+                  <li key={i}>{x}</li>
+                ))}
+              </ul>
+            </div>
+            <div>
+              <strong>Recent public mentions</strong>
+              <ul className="list">
+                {(data.company_profile?.recent_public_mentions ?? []).map((x, i) => (
+                  <li key={i}>{x}</li>
+                ))}
+              </ul>
+            </div>
+          </section>
+
           <section className="card">
             <div className="cardTitle">Study of Person (AI-inferred)</div>
             <ul className="list">
               <li>
-                <strong>Likely role/focus:</strong> {data.study_of_person.likely_role_focus ?? "—"}
+                <strong>Likely role/focus:</strong> {data.study_of_person.likely_role_focus ?? "unknown"}
               </li>
               <li>
-                <strong>Domain:</strong> {data.study_of_person.domain ?? "—"}
+                <strong>Domain:</strong> {data.study_of_person.domain ?? "unknown"}
               </li>
               <li>
-                <strong>Communication style:</strong> {data.study_of_person.communication_style ?? "—"}
+                <strong>Communication style:</strong> {data.study_of_person.communication_style ?? "unknown"}
+              </li>
+              <li>
+                <strong>Seniority signal:</strong> {data.study_of_person.seniority_signal ?? "unknown"}
+              </li>
+              <li>
+                <strong>Public presence:</strong> {data.study_of_person.public_presence_signal ?? "unknown"}
               </li>
             </ul>
           </section>
+
+          <section className="card">
+            <div className="cardTitle">Questions to ask</div>
+            <ol className="list">
+              {(data.questions_to_ask ?? []).map((q, i) => (
+                <li key={i}>{q}</li>
+              ))}
+            </ol>
+          </section>
+
+          <section className="card">
+            <div className="cardTitle">Email openers</div>
+            <ul className="list">
+              <li>
+                <strong>Formal:</strong> {data.email_openers?.formal ?? "unknown"}
+              </li>
+              <li>
+                <strong>Warm:</strong> {data.email_openers?.warm ?? "unknown"}
+              </li>
+              <li>
+                <strong>Technical:</strong> {data.email_openers?.technical ?? "unknown"}
+              </li>
+            </ul>
+          </section>
+
+          <section className="card">
+            <div className="cardTitle">Red flags (avoid assumptions)</div>
+            <ul className="list">
+              {(data.red_flags ?? []).map((x, i) => (
+                <li key={i}>{x}</li>
+              ))}
+            </ul>
+          </section>
+
+          {data.github_profile ? <GitHubCard profile={data.github_profile} /> : null}
 
           <section className="card">
             <div className="cardTitle">Recommendations</div>

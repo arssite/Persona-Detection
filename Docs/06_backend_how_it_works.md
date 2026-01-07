@@ -51,15 +51,17 @@ Output: JSON (validated by Pydantic) containing:
 6. **Caching**
    - In-memory TTL cache (5 minutes) prevents repeated scraping and stabilizes demo performance.
 
-## LinkedIn & other sources — what we do / do not do
+## LinkedIn, GitHub & other sources — what we do / do not do
 ### What we DO
 - We run DuckDuckGo web search.
-- If DuckDuckGo results include a LinkedIn page **as a public snippet**, that snippet and URL may appear in `evidence`.
+- If DuckDuckGo results include a LinkedIn page **as a public snippet**, that snippet + URL may appear in `evidence`.
+- If DuckDuckGo results include a **GitHub profile URL**, we may call the **GitHub public API** to summarize public info (languages, recent repos).
 
 ### What we DO NOT do
 - We do **not** log into LinkedIn.
 - We do **not** scrape authenticated LinkedIn profile pages.
 - We do **not** use any paid enrichment APIs.
+- We do **not** bypass robots restrictions for company-site crawling.
 
 This keeps the MVP in the "public web signals" category.
 
