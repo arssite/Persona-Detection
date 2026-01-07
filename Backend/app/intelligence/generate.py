@@ -18,6 +18,7 @@ from app.intelligence.json_guard import try_parse_json
 from app.core.confidence import fallback_confidence
 from app.intelligence.gemini_client import get_client
 from app.core.config import get_settings
+from app.core.llm_errors import is_rate_limited_error, parse_retry_after_seconds
 
 
 _SYSTEM = """You are an AI assistant that creates meeting intelligence from public web signals.
@@ -70,7 +71,7 @@ from app.core.cache import TTLCache
 _RESULT_CACHE: TTLCache[AnalyzeResponse] = TTLCache(ttl_s=300.0, max_items=256)
 
 
-async def generate_meeting_intel(parsed: ParsedEmail) -> AnalyzeResponse:
+async def generate_meeting_intel(parsed: ParsedEmail, force_refresh: bool = False) -> AnalyzeResponse:
     # MVP v0: collect lightweight public signals via web search.
     from app.search.ddg import ddg_search, results_to_evidence
 
@@ -78,7 +79,7 @@ async def generate_meeting_intel(parsed: ParsedEmail) -> AnalyzeResponse:
 
     cache_key = parsed.raw.lower().strip()
     cached = _RESULT_CACHE.get(cache_key)
-    if cached is not None:
+    if cached is not None and not force_refresh:
         return cached
 
     collected_evidence: list[dict] = []
@@ -141,11 +142,18 @@ async def generate_meeting_intel(parsed: ParsedEmail) -> AnalyzeResponse:
         github_profile = None
 
     client = get_client()
-    response = client.models.generate_content(
-        model=settings.gemini_model,
-        contents=_prompt(parsed, collected_evidence),
-        config={"system_instruction": _SYSTEM, "response_mime_type": "application/json"},
-    )
+    try:
+        response = client.models.generate_content(
+            model=settings.gemini_model,
+            contents=_prompt(parsed, collected_evidence),
+            config={"system_instruction": _SYSTEM, "response_mime_type": "application/json"},
+        )
+    except Exception as e:
+        # Bubble up a stable sentinel so the API layer can map it to HTTP 429.
+        if is_rate_limited_error(e):
+            retry_s = parse_retry_after_seconds(e)
+            raise RuntimeError(f"ANALYZE_LLM_RATE_LIMIT:{retry_s if retry_s is not None else ''}") from e
+        raise
 
     # google-genai may return response.text as JSON when response_mime_type is set.
     raw = getattr(response, "text", None) or "{}"
@@ -159,11 +167,17 @@ async def generate_meeting_intel(parsed: ParsedEmail) -> AnalyzeResponse:
             + str(parse_err)
             + "). Return ONLY valid JSON matching the required schema."
         )
-        response2 = client.models.generate_content(
-            model=settings.gemini_model,
-            contents=repair_prompt,
-            config={"system_instruction": _SYSTEM, "response_mime_type": "application/json"},
-        )
+        try:
+            response2 = client.models.generate_content(
+                model=settings.gemini_model,
+                contents=repair_prompt,
+                config={"system_instruction": _SYSTEM, "response_mime_type": "application/json"},
+            )
+        except Exception as e:
+            if is_rate_limited_error(e):
+                retry_s = parse_retry_after_seconds(e)
+                raise RuntimeError(f"ANALYZE_LLM_RATE_LIMIT:{retry_s if retry_s is not None else ''}") from e
+            raise
         raw2 = getattr(response2, "text", None) or "{}"
         data, _ = try_parse_json(raw2)
 
@@ -266,11 +280,17 @@ async def generate_meeting_intel(parsed: ParsedEmail) -> AnalyzeResponse:
             + "Validation error: "
             + str(ve)
         )
-        response3 = client.models.generate_content(
-            model=settings.gemini_model,
-            contents=repair_prompt,
-            config={"system_instruction": _SYSTEM, "response_mime_type": "application/json"},
-        )
+        try:
+            response3 = client.models.generate_content(
+                model=settings.gemini_model,
+                contents=repair_prompt,
+                config={"system_instruction": _SYSTEM, "response_mime_type": "application/json"},
+            )
+        except Exception as e:
+            if is_rate_limited_error(e):
+                retry_s = parse_retry_after_seconds(e)
+                raise RuntimeError(f"ANALYZE_LLM_RATE_LIMIT:{retry_s if retry_s is not None else ''}") from e
+            raise
         raw3 = getattr(response3, "text", None) or "{}"
         data3, _ = try_parse_json(raw3)
         if not isinstance(data3, dict):

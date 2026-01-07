@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import "./App.css";
 import { analyze, type AnalyzeResponse } from "./api/client";
+import { MrAssistant } from "./components/MrAssistant";
 import { ConfidenceBadge } from "./components/ConfidenceBadge";
 import { ConfidenceMeter } from "./components/ConfidenceMeter";
 import { EvidenceBreakdownChart } from "./components/EvidenceBreakdownChart";
@@ -39,6 +40,7 @@ function App() {
       window.clearTimeout(t3);
       setStage(null);
       setData(res);
+      setActiveTab("analysis");
     } catch (err) {
       setStage(null);
       setError(err instanceof Error ? err.message : String(err));
@@ -47,10 +49,15 @@ function App() {
     }
   }
 
+  const [activeTab, setActiveTab] = useState<"analysis" | "assistant">("analysis");
+
   return (
-    <div>
-      <h1 className="pageTitle">Meeting Intelligence MVP</h1>
-      <p className="subtitle">Enter a corporate email. We infer meeting guidance using public web signals and Gemini.</p>
+    <div className="appShell">
+      <div className="appContent">
+        <h1 className="pageTitle">Meeting Intelligence MVP</h1>
+        <p className="subtitle">
+          Enter a corporate email. We infer meeting guidance using public web signals and a lightweight RAG-style agent.
+        </p>
 
       <form onSubmit={onSubmit} className="topBar">
         <input
@@ -84,7 +91,25 @@ function App() {
       </div>
 
       {data ? (
-        <div className="grid">
+        <>
+          <div className="tabs">
+            <button
+              type="button"
+              className={activeTab === "analysis" ? "tab tabActive" : "tab"}
+              onClick={() => setActiveTab("analysis")}
+            >
+              Analysis
+            </button>
+            <button
+              type="button"
+              className={activeTab === "assistant" ? "tab tabActive" : "tab"}
+              onClick={() => setActiveTab("assistant")}
+            >
+              Mr Assistant
+            </button>
+          </div>
+
+          {activeTab === "analysis" ? <div className="grid">
           <div className="twoCol">
             <section className="card">
               <div className="cardTitle">Input</div>
@@ -286,8 +311,10 @@ function App() {
 
             <JsonDetails title="Raw JSON response" data={data} />
           </section>
-        </div>
+        </div> : <MrAssistant analyze={data} />}
+        </>
       ) : null}
+      </div>
     </div>
   );
 }

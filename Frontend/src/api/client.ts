@@ -89,3 +89,81 @@ export async function analyze(req: AnalyzeRequest): Promise<AnalyzeResponse> {
 
   return (await res.json()) as AnalyzeResponse;
 }
+
+// ----------------------
+// Mr Assistant (RAG agent) API
+// ----------------------
+
+export type AssistantAgenda = {
+  pitch: string;
+  goal: string;
+  meeting_type?: string | null;
+  audience_context?: string | null;
+  constraints?: string | null;
+};
+
+export type AssistantBootstrapRequest = {
+  email: string;
+  agenda: AssistantAgenda;
+  refresh_public_signals?: boolean;
+};
+
+export type AssistantBootstrapResponse = {
+  session_id: string;
+  assistant_name: string;
+  intro: string;
+  starter_questions: string[];
+  pitch_openers: string[];
+  pitch_structure: string[];
+  likely_objections: string[];
+  objection_responses: string[];
+  confidence: string;
+  citations: EvidenceItem[];
+  analyze_snapshot: AnalyzeResponse;
+};
+
+export type AssistantChatRequest = {
+  session_id: string;
+  message: string;
+  confirm_refresh?: boolean;
+};
+
+export type AssistantChatResponse = {
+  session_id: string;
+  assistant_name: string;
+  message: string;
+  follow_up_questions: string[];
+  refresh_recommended: boolean;
+  refresh_reason?: string | null;
+  citations: EvidenceItem[];
+};
+
+export async function assistantBootstrap(req: AssistantBootstrapRequest): Promise<AssistantBootstrapResponse> {
+  const res = await fetch(`${API_BASE_URL}/v1/assistant/bootstrap`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(req),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || `Request failed (${res.status})`);
+  }
+
+  return (await res.json()) as AssistantBootstrapResponse;
+}
+
+export async function assistantChat(req: AssistantChatRequest): Promise<AssistantChatResponse> {
+  const res = await fetch(`${API_BASE_URL}/v1/assistant/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(req),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || `Request failed (${res.status})`);
+  }
+
+  return (await res.json()) as AssistantChatResponse;
+}
