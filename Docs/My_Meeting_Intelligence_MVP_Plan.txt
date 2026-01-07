@@ -1,0 +1,114 @@
+
+MY PERSONAL MVP PLAN – MEETING INTELLIGENCE SYSTEM
+===============================================
+
+Goal
+----
+Build a recruiter-demo-ready MVP that converts a corporate email into AI-driven meeting intelligence
+using only public web data (no paid APIs), showing real system thinking and believable outputs.
+
+Core Idea
+---------
+Input: Corporate email (e.g., firstname.lastname@company.com)
+Output: AI-inferred persona + behavioral coaching for meetings.
+
+This is NOT just data enrichment.
+This is a pre-meeting AI coach that tells me:
+- Who the person likely is
+- What they likely care about
+- How I should behave in the meeting
+
+Scope (V1 – Strict MVP)
+----------------------
+- Corporate emails only
+- No calendar integration
+- No paid enrichment APIs
+- Live / near-live web search + scraping
+- Transparent confidence-based AI output
+
+High-Level Flow
+---------------
+1. User enters corporate email
+2. Backend validates email and extracts:
+   - Name (best effort)
+   - Company domain
+3. System performs real-time public research:
+   - Company website scraping (About, Blog, Careers)
+   - Web search scraping (DuckDuckGo/Bing HTML)
+   - LinkedIn via search-engine preview only
+4. Signals are merged (company > person if person data is weak)
+5. LLM converts signals into structured persona + recommendations
+6. Frontend displays results with confidence label
+
+What I Scrape (Free & Safe)
+---------------------------
+- Company website content
+- Search engine result snippets
+- Public mentions, interviews, blogs
+- LinkedIn preview snippets (no login, no profile scraping)
+
+What I Do NOT Scrape
+--------------------
+- Private LinkedIn data
+- Authenticated platforms
+- Emails or personal contact info
+
+AI Intelligence Logic
+--------------------
+- If person-level data exists → use it
+- If not → fall back to company-level inference
+- Always phrase insights probabilistically
+- Never claim certainty
+
+Output Sections
+---------------
+1. Study of Person (AI-Inferred)
+   - Likely role focus
+   - Domain
+   - Communication style
+
+2. Suggestions for Me
+   - Dress recommendation
+   - Tone to use
+   - Do’s and Don’ts
+   - 2–3 connecting points
+   - Suggested agenda focus
+
+Tech Stack
+----------
+- Backend: FastAPI (Python)
+- Frontend: React
+- AI: LLM (prompt-driven, structured JSON output)
+- Scraping: Requests + BeautifulSoup
+- Caching: In-memory (TTL)
+
+Why This Impresses Recruiters
+-----------------------------
+- Works with real inputs (any corporate email)
+- Uses real web data (not fake GPT answers)
+- Has fallback logic (system never breaks)
+- Transparent about confidence & limitations
+- Shows product + engineering thinking
+
+How I Will Demo
+---------------
+- Enter a real corporate email live
+- Show analysis loading (real scraping)
+- Display persona + coaching output
+- Explain confidence and fallback logic
+
+Future Enhancements (Post-MVP)
+------------------------------
+- Calendar integration
+- Countdown coach mode (T-30 / T-10)
+- CRM integration
+- Paid enrichment APIs for accuracy
+- Multi-attendee meetings
+
+One-Line Pitch
+--------------
+An AI-powered pre-meeting coach that turns a corporate email into actionable meeting intelligence
+using public web signals and transparent AI reasoning.
+
+
+""""My Idea is that suppose we have schedule a meeting we got email of that person, so with that email we search on web+ Lindein+ social media, track their footprints to paatern of that person behaviour , company details, thought process and other useful facts, hobbies, so we can know how to present or pitch something infront of him "
