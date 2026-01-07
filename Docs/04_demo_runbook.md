@@ -20,7 +20,7 @@ npm run dev
 2. Enter a corporate email.
 3. Show confidence + rationale.
 4. Show recommendations.
-5. (Once implemented) show evidence panel with the snippets used.
+5. Show evidence panel with the snippets used (search + company site).
 
 ## Troubleshooting
 - If `/v1/analyze` errors with `GEMINI_API_KEY is not configured`, create `Backend/.env`.

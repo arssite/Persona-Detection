@@ -2,6 +2,11 @@ import { useMemo, useState } from "react";
 import "./App.css";
 import { analyze, type AnalyzeResponse } from "./api/client";
 import { ConfidenceBadge } from "./components/ConfidenceBadge";
+import { ConfidenceMeter } from "./components/ConfidenceMeter";
+import { EvidenceBreakdownChart } from "./components/EvidenceBreakdownChart";
+import { JsonDetails } from "./components/JsonDetails";
+import { BubbleLoader } from "./components/BubbleLoader";
+import { UseCasesRotator } from "./components/UseCasesRotator";
 
 function App() {
   const [email, setEmail] = useState("");
@@ -41,89 +46,72 @@ function App() {
   }
 
   return (
-    <div style={{ maxWidth: 920, margin: "40px auto", padding: 16 }}>
-      <h1 style={{ marginBottom: 8 }}>Meeting Intelligence MVP</h1>
-      <p style={{ marginTop: 0, color: "#4b5563" }}>
-        Enter a corporate email. We infer meeting guidance using public web signals and Gemini.
-      </p>
+    <div>
+      <h1 className="pageTitle">Meeting Intelligence MVP</h1>
+      <p className="subtitle">Enter a corporate email. We infer meeting guidance using public web signals and Gemini.</p>
 
-      <form onSubmit={onSubmit} style={{ display: "flex", gap: 12, alignItems: "center" }}>
+      <form onSubmit={onSubmit} className="topBar">
         <input
+          className="input"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           placeholder="firstname.lastname@company.com"
-          style={{ flex: 1, padding: 12, borderRadius: 8, border: "1px solid #d1d5db" }}
         />
-        <button
-          disabled={!canSubmit || loading}
-          type="submit"
-          style={{
-            padding: "12px 16px",
-            borderRadius: 8,
-            border: "1px solid #111827",
-            background: loading ? "#9ca3af" : "#111827",
-            color: "white",
-            cursor: loading ? "not-allowed" : "pointer",
-          }}
-        >
+        <button disabled={!canSubmit || loading} type="submit" className="button">
           {loading ? "Analyzing…" : "Analyze"}
         </button>
       </form>
 
-      <div style={{ marginTop: 10, fontSize: 12, color: "#6b7280" }}>
-        Note: This tool uses public information and produces AI-inferred suggestions, not facts.
-      </div>
+      <div className="note">Note: This tool uses public information and produces AI-inferred suggestions, not facts.</div>
 
       {loading && stage ? (
-        <div style={{ marginTop: 14, fontSize: 14, color: "#374151" }}>
-          <strong>Status:</strong> {stage}
-        </div>
+        <>
+          <div className="status" style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+            <span className="pill">Status</span>
+            <span>{stage}</span>
+            <BubbleLoader />
+          </div>
+          <UseCasesRotator />
+        </>
       ) : null}
 
-      {error ? (
-        <pre
-          style={{
-            marginTop: 16,
-            padding: 12,
-            background: "#fef2f2",
-            border: "1px solid #fecaca",
-            borderRadius: 8,
-            color: "#991b1b",
-            whiteSpace: "pre-wrap",
-          }}
-        >
-          {error}
-        </pre>
-      ) : null}
+      {error ? <pre className="error">{error}</pre> : null}
+
+      <div style={{ marginTop: 18 }} className="smallTextOnDark">
+        Developer: <strong style={{ color: "rgb(125, 249, 255)" }}>ANMOL R. SRIVASTAVA</strong>
+      </div>
 
       {data ? (
-        <div style={{ marginTop: 22, display: "grid", gap: 16 }}>
-          <div style={{ padding: 16, border: "1px solid #e5e7eb", borderRadius: 12 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-              <div>
-                <div style={{ fontSize: 14, color: "#6b7280" }}>Input</div>
-                <div style={{ fontWeight: 600 }}>{data.input_email}</div>
-                <div style={{ marginTop: 6, fontSize: 14, color: "#374151" }}>
-                  <div>
-                    <strong>Name guess:</strong> {data.person_name_guess ?? "—"}
-                  </div>
-                  <div>
-                    <strong>Company domain:</strong> {data.company_domain ?? "—"}
-                  </div>
-                </div>
+        <div className="grid">
+          <div className="twoCol">
+            <section className="card">
+              <div className="cardTitle">Input</div>
+              <div className="kvLabel">Email</div>
+              <div className="kvValue">{data.input_email}</div>
+
+              <div style={{ height: 10 }} />
+
+              <div className="kvLabel">Name guess</div>
+              <div>{data.person_name_guess ?? "—"}</div>
+
+              <div style={{ height: 8 }} />
+
+              <div className="kvLabel">Company domain</div>
+              <div>{data.company_domain ?? "—"}</div>
+            </section>
+
+            <section className="card">
+              <div className="cardTitle">Confidence</div>
+              <ConfidenceBadge confidence={data.confidence} />
+              <div style={{ marginTop: 10 }}>
+                <ConfidenceMeter confidence={data.confidence} />
               </div>
-              <div>
-                <div style={{ fontSize: 14, color: "#6b7280" }}>Confidence</div>
-                <div style={{ marginTop: 6 }}>
-                  <ConfidenceBadge confidence={data.confidence} />
-                </div>
-              </div>
-            </div>
+            </section>
           </div>
 
-          <div style={{ padding: 16, border: "1px solid #e5e7eb", borderRadius: 12 }}>
-            <h2 style={{ marginTop: 0 }}>Study of Person (AI-inferred)</h2>
-            <ul style={{ margin: 0 }}>
+          <section className="card">
+            <div className="cardTitle">Study of Person (AI-inferred)</div>
+            <ul className="list">
               <li>
                 <strong>Likely role/focus:</strong> {data.study_of_person.likely_role_focus ?? "—"}
               </li>
@@ -134,11 +122,12 @@ function App() {
                 <strong>Communication style:</strong> {data.study_of_person.communication_style ?? "—"}
               </li>
             </ul>
-          </div>
+          </section>
 
-          <div style={{ padding: 16, border: "1px solid #e5e7eb", borderRadius: 12 }}>
-            <h2 style={{ marginTop: 0 }}>Recommendations</h2>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+          <section className="card">
+            <div className="cardTitle">Recommendations</div>
+
+            <div className="twoCol">
               <div>
                 <div>
                   <strong>Dress:</strong> {data.recommendations.dress ?? "—"}
@@ -146,23 +135,33 @@ function App() {
                 <div>
                   <strong>Tone:</strong> {data.recommendations.tone ?? "—"}
                 </div>
+
+                <div style={{ height: 10 }} />
+
+                <strong>Suggested agenda</strong>
+                <ol className="list">
+                  {data.recommendations.suggested_agenda.map((x, i) => (
+                    <li key={i}>{x}</li>
+                  ))}
+                </ol>
               </div>
+
               <div>
-                <div>
-                  <strong>Connecting points:</strong>
-                  <ul>
-                    {data.recommendations.connecting_points.map((x, i) => (
-                      <li key={i}>{x}</li>
-                    ))}
-                  </ul>
-                </div>
+                <strong>Connecting points</strong>
+                <ul className="list">
+                  {data.recommendations.connecting_points.map((x, i) => (
+                    <li key={i}>{x}</li>
+                  ))}
+                </ul>
               </div>
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+            <div style={{ height: 10 }} />
+
+            <div className="twoCol">
               <div>
                 <strong>Do</strong>
-                <ul>
+                <ul className="list">
                   {data.recommendations.dos.map((x, i) => (
                     <li key={i}>{x}</li>
                   ))}
@@ -170,38 +169,44 @@ function App() {
               </div>
               <div>
                 <strong>Don’t</strong>
-                <ul>
+                <ul className="list">
                   {data.recommendations.donts.map((x, i) => (
                     <li key={i}>{x}</li>
                   ))}
                 </ul>
               </div>
             </div>
+          </section>
 
-            <div>
-              <strong>Suggested agenda</strong>
-              <ol>
-                {data.recommendations.suggested_agenda.map((x, i) => (
-                  <li key={i}>{x}</li>
-                ))}
-              </ol>
-            </div>
-          </div>
-
-          <div style={{ padding: 16, border: "1px solid #e5e7eb", borderRadius: 12 }}>
-            <h2 style={{ marginTop: 0 }}>Evidence (public snippets)</h2>
+          <section className="card">
+            <div className="cardTitle">Evidence (public snippets)</div>
+            <EvidenceBreakdownChart evidence={data.evidence} />
             {data.evidence.length === 0 ? (
-              <div style={{ color: "#6b7280" }}>No evidence collected yet (backend scaffold).</div>
+              <div className="smallText">No evidence collected.</div>
             ) : (
-              <ul>
+              <ul className="list">
                 {data.evidence.map((e, i) => (
-                  <li key={i}>
-                    <strong>{e.source}:</strong> {e.snippet} {e.url ? <a href={e.url}>link</a> : null}
+                  <li key={i} style={{ marginBottom: 10 }}>
+                    <div>
+                      <span className="pill" style={{ textTransform: "none" }}>
+                        {e.source}
+                      </span>
+                    </div>
+                    <div style={{ marginTop: 6 }}>{e.snippet}</div>
+                    {e.url ? (
+                      <div style={{ marginTop: 4 }}>
+                        <a href={e.url} target="_blank" rel="noreferrer" style={{ fontSize: 12 }}>
+                          {e.url}
+                        </a>
+                      </div>
+                    ) : null}
                   </li>
                 ))}
               </ul>
             )}
-          </div>
+
+            <JsonDetails title="Raw JSON response" data={data} />
+          </section>
         </div>
       ) : null}
     </div>

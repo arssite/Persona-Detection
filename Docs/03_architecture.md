@@ -15,8 +15,14 @@
   - recommendations
   - evidence
 
-## Next build steps
-1. Implement web search collection (DuckDuckGo HTML)
-2. Implement company-site scraping and content cleaning
-3. Pass evidence snippets into Gemini prompt
-4. Add confidence scoring rules based on evidence quality
+## Current data sources (implemented)
+- DuckDuckGo HTML search snippets
+- Company website pages (small crawl)
+
+## LinkedIn policy
+We do **not** scrape LinkedIn directly. If a LinkedIn URL appears in DuckDuckGo results, we may include the public snippet and link as evidence.
+
+## Next build steps (optional enhancements)
+- Better HTML parsing (BeautifulSoup) + stronger dedupe
+- More deterministic confidence scoring
+- Streaming progress to the UI
