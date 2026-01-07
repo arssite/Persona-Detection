@@ -29,6 +29,12 @@ Output (JSON + UI):
 - `confidence` + `evidence[]` (snippets + sources)
 - optional: `github_profile` (only when a profile URL is discovered via public search)
 
+### Demo video
+- File: `Output_For_V1.mp4`
+
+If you’re viewing this on GitHub, you can download and watch it here:
+- [`Output_For_V1.mp4`](./Output_For_V1.mp4)
+
 ---
 
 ## Architecture (high level)
