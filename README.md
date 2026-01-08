@@ -30,10 +30,27 @@ Output (JSON + UI):
 - optional: `github_profile` (only when a profile URL is discovered via public search)
 
 ### Demo video
-- File: `Output_For_V1.mp4`
 
-If you’re viewing this on GitHub, you can download and watch it here:
+<video src="./Output_For_V1.mp4" controls muted playsinline loop style="max-width: 100%; border-radius: 12px; border: 1px solid rgba(255,255,255,0.12);"></video>
+
+If the video does not render inline in your viewer, use the direct file link:
 - [`Output_For_V1.mp4`](./Output_For_V1.mp4)
+
+> Note: Many platforms (including GitHub) restrict autoplay in READMEs. The embed above is best-effort; it will usually require a user click to start.
+
+---
+
+## How it works (visual pipeline)
+
+![Pipeline Overview](./Docs/4fabfac8-2a7e-4bf5-a05c-6016272e57a9.png)
+
+**Step-by-step:**
+1. **Input: Corporate Email** → User enters `firstname.lastname@company.com`
+2. **Validate + Guess Name/Company** → Parse domain, infer first/last name
+3. **Public Research** → DuckDuckGo search + conservative company website crawl
+4. **Evidence Pack** → Collect links + snippets (transparent sourcing)
+5. **AI Synthesis** → LLM generates structured persona + meeting prep (JSON)
+6. **Output to UI** → Confidence meter + recommendations + evidence citations
 
 ---
 
