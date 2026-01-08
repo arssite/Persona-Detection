@@ -33,13 +33,129 @@ body {
 }
 
 #root {
+  width: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+.appShell {
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+}
+
+.appContent {
+  width: 100%;
   max-width: 1080px;
-  margin: 0 auto;
   padding: 28px 16px 60px;
+  overflow-x: hidden; /* prevent accidental horizontal scroll */
+}
+
+.tabs {
+  display: flex;
+  gap: 10px;
+  margin-top: 18px;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+}
+
+.tab {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: white;
+  padding: 10px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.tab:hover {
+  box-shadow: 0 0 0 4px rgba(125, 249, 255, 0.10);
+}
+
+.tabActive {
+  border-color: rgba(125, 249, 255, 0.6);
+  box-shadow: 0 0 0 2px rgba(125, 249, 255, 0.15);
+}
+
+.chatPanel {
+  border: 1px solid rgba(15, 23, 42, 0.14);
+  border-radius: 12px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.55);
+  max-height: 46vh;
+  overflow: auto;
+}
+
+.chatMsg {
+  padding: 10px 12px;
+  border-radius: 12px;
+  margin-bottom: 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.chatUser {
+  background: rgba(125, 249, 255, 0.18);
+  border: 1px solid rgba(125, 249, 255, 0.28);
+}
+
+.chatAssistant {
+  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(15, 23, 42, 0.10);
+}
+
+.chatRole {
+  font-size: 12px;
+  opacity: 0.75;
+  margin-bottom: 6px;
+}
+
+.chatContent {
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.chatComposer {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  z-index: 999;
+}
+
+.modal {
+  width: 100%;
+  max-width: 720px;
+  background: rgba(18, 18, 18, 0.96);
+  color: var(--textOnDark);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 14px;
+  padding: 16px;
+}
+
+.modal .list {
+  color: var(--textOnDark);
+}
+
+.modal .note {
+  color: var(--mutedOnDark);
 }
 
 a {
   color: var(--accent2);
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 a:hover {
   color: var(--accent);
@@ -126,6 +242,7 @@ a:hover {
   margin-top: 22px;
   display: grid;
   gap: 16px;
+  min-width: 0;
 }
 
 .card {
@@ -135,6 +252,7 @@ a:hover {
   background: var(--card);
   color: var(--text);
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12);
+  min-width: 0;
 }
 
 .cardTitle {
@@ -156,6 +274,11 @@ a:hover {
   display: grid;
   grid-template-columns: 1.2fr 0.8fr;
   gap: 16px;
+  min-width: 0;
+}
+
+.twoCol > * {
+  min-width: 0;
 }
 
 @media (max-width: 900px) {

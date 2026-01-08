@@ -9,11 +9,16 @@ from app.schemas.meeting_intel import (
     Confidence,
     Recommendations,
     StudyOfPerson,
+    GitHubProfile,
+    CompanyProfile,
+    EmailOpeners,
 )
+from app.intelligence.defaults import coalesce_list, coalesce_str, coalesce_dict
 from app.intelligence.json_guard import try_parse_json
 from app.core.confidence import fallback_confidence
 from app.intelligence.gemini_client import get_client
 from app.core.config import get_settings
+from app.core.llm_errors import is_rate_limited_error, parse_retry_after_seconds
 
 
 _SYSTEM = """You are an AI assistant that creates meeting intelligence from public web signals.
@@ -42,8 +47,21 @@ Evidence (public web signals):
 {bullets}
 
 Task:
-Return JSON with keys: confidence, study_of_person, recommendations, evidence.
-- Evidence should be a list of items with: source, snippet, url (optional)
+Return JSON with keys:
+- confidence: {{label, rationale}}
+- company_confidence (optional): {{label, rationale}}
+- person_confidence (optional): {{label, rationale}}
+- one_minute_brief (string)
+- questions_to_ask (array of strings)
+- email_openers: {{formal, warm, technical}}
+- red_flags (array of strings)
+- company_profile: {{summary, likely_products_services, hiring_signals, recent_public_mentions}}
+- study_of_person
+- recommendations
+- evidence (array of {{source, snippet, url}})
+
+Rules:
+- If unknown, return the string "unknown" (not null).
 """
 
 
@@ -53,7 +71,7 @@ from app.core.cache import TTLCache
 _RESULT_CACHE: TTLCache[AnalyzeResponse] = TTLCache(ttl_s=300.0, max_items=256)
 
 
-async def generate_meeting_intel(parsed: ParsedEmail) -> AnalyzeResponse:
+async def generate_meeting_intel(parsed: ParsedEmail, force_refresh: bool = False) -> AnalyzeResponse:
     # MVP v0: collect lightweight public signals via web search.
     from app.search.ddg import ddg_search, results_to_evidence
 
@@ -61,34 +79,81 @@ async def generate_meeting_intel(parsed: ParsedEmail) -> AnalyzeResponse:
 
     cache_key = parsed.raw.lower().strip()
     cached = _RESULT_CACHE.get(cache_key)
-    if cached is not None:
+    if cached is not None and not force_refresh:
         return cached
 
     collected_evidence: list[dict] = []
     if parsed.domain:
-        # Company-level signals (search + company website)
+        from app.scraping.company_site import scrape_company_site, pages_to_evidence
+        from app.intelligence.evidence import dedupe_and_rank
+
+        # 1) Company-level signals (search + company website)
         company_q = f"{parsed.domain} about company"
-        company_results = await ddg_search(company_q, max_results=5)
+        company_results = await ddg_search(company_q, max_results=6)
         collected_evidence.extend(results_to_evidence(company_results, source="ddg_company"))
 
-        from app.scraping.company_site import scrape_company_site, pages_to_evidence
-
-        pages = await scrape_company_site(parsed.domain, max_pages=4)
+        pages = await scrape_company_site(parsed.domain, max_pages=8)
         collected_evidence.extend(pages_to_evidence(pages))
 
-        # Person-level signals (best-effort if we have a name guess)
+        # 2) News signals (press, funding, announcements)
+        news_q = f"{parsed.domain} funding OR raises OR press release"
+        news_results = await ddg_search(news_q, max_results=6)
+        collected_evidence.extend(results_to_evidence(news_results, source="ddg_news"))
+
+        # 3) Hiring signals (careers + job platforms)
+        hiring_q = f"site:{parsed.domain} careers OR jobs OR hiring"
+        hiring_results = await ddg_search(hiring_q, max_results=6)
+        collected_evidence.extend(results_to_evidence(hiring_results, source="ddg_hiring"))
+
+        # 4) Person-level signals (best-effort if we have a name guess)
         name_guess = " ".join([p for p in [parsed.guessed_first_name, parsed.guessed_last_name] if p]) or None
         if name_guess:
             person_q = f"{name_guess} {parsed.domain}"
-            person_results = await ddg_search(person_q, max_results=5)
+            person_results = await ddg_search(person_q, max_results=6)
             collected_evidence.extend(results_to_evidence(person_results, source="ddg_person"))
 
+            # GitHub hints
+            gh_q = f"{name_guess} github"
+            gh_results = await ddg_search(gh_q, max_results=4)
+            collected_evidence.extend(results_to_evidence(gh_results, source="ddg_github"))
+
+        # Final: dedupe + rank
+        collected_evidence = dedupe_and_rank(collected_evidence, max_items=22)
+
+    # Optional GitHub enrichment (public API) if we can confidently detect a profile URL
+    github_profile = None
+    try:
+        from app.enrichment.github import extract_github_user, fetch_github_profile
+
+        gh_users: list[str] = []
+        for e in collected_evidence:
+            if str(e.get("source")) not in {"ddg_github"}:
+                continue
+            u = extract_github_user(str(e.get("url") or ""))
+            if u:
+                gh_users.append(u)
+
+        # Pick the first candidate for MVP
+        if gh_users:
+            gh = await fetch_github_profile(gh_users[0])
+            if gh:
+                github_profile = gh
+    except Exception:
+        github_profile = None
+
     client = get_client()
-    response = client.models.generate_content(
-        model=settings.gemini_model,
-        contents=_prompt(parsed, collected_evidence),
-        config={"system_instruction": _SYSTEM, "response_mime_type": "application/json"},
-    )
+    try:
+        response = client.models.generate_content(
+            model=settings.gemini_model,
+            contents=_prompt(parsed, collected_evidence),
+            config={"system_instruction": _SYSTEM, "response_mime_type": "application/json"},
+        )
+    except Exception as e:
+        # Bubble up a stable sentinel so the API layer can map it to HTTP 429.
+        if is_rate_limited_error(e):
+            retry_s = parse_retry_after_seconds(e)
+            raise RuntimeError(f"ANALYZE_LLM_RATE_LIMIT:{retry_s if retry_s is not None else ''}") from e
+        raise
 
     # google-genai may return response.text as JSON when response_mime_type is set.
     raw = getattr(response, "text", None) or "{}"
@@ -102,11 +167,17 @@ async def generate_meeting_intel(parsed: ParsedEmail) -> AnalyzeResponse:
             + str(parse_err)
             + "). Return ONLY valid JSON matching the required schema."
         )
-        response2 = client.models.generate_content(
-            model=settings.gemini_model,
-            contents=repair_prompt,
-            config={"system_instruction": _SYSTEM, "response_mime_type": "application/json"},
-        )
+        try:
+            response2 = client.models.generate_content(
+                model=settings.gemini_model,
+                contents=repair_prompt,
+                config={"system_instruction": _SYSTEM, "response_mime_type": "application/json"},
+            )
+        except Exception as e:
+            if is_rate_limited_error(e):
+                retry_s = parse_retry_after_seconds(e)
+                raise RuntimeError(f"ANALYZE_LLM_RATE_LIMIT:{retry_s if retry_s is not None else ''}") from e
+            raise
         raw2 = getattr(response2, "text", None) or "{}"
         data, _ = try_parse_json(raw2)
 
@@ -149,8 +220,30 @@ async def generate_meeting_intel(parsed: ParsedEmail) -> AnalyzeResponse:
     if confidence.get("label") == "low" and "default" in confidence.get("rationale", "").lower():
         confidence = fallback_confidence(collected_evidence)
 
-    sop = data.get("study_of_person") or {}
-    recs = data.get("recommendations") or {}
+    sop = coalesce_dict(data.get("study_of_person"))
+    recs = coalesce_dict(data.get("recommendations"))
+
+    one_minute_brief = data.get("one_minute_brief") or "unknown"
+    questions_to_ask = data.get("questions_to_ask") or [
+        "What are your top priorities for this role in the next 30–60 days?",
+        "What does success look like after the first 90 days?",
+        "Which skills/traits differentiate strong candidates in your team?",
+    ]
+    email_openers = data.get("email_openers")
+    red_flags = data.get("red_flags") or [
+        "Avoid assuming the person’s exact title/seniority without confirmation.",
+        "Avoid claiming information beyond the provided public evidence.",
+    ]
+    company_profile = coalesce_dict(data.get("company_profile"))
+    # Coerce list-like fields inside company_profile
+    if company_profile:
+        company_profile["likely_products_services"] = coalesce_list(company_profile.get("likely_products_services"))
+        company_profile["hiring_signals"] = coalesce_list(company_profile.get("hiring_signals"))
+        company_profile["recent_public_mentions"] = coalesce_list(company_profile.get("recent_public_mentions"))
+        company_profile["summary"] = coalesce_str(company_profile.get("summary"))
+
+    company_conf = data.get("company_confidence")
+    person_conf = data.get("person_confidence")
 
     # Prefer model-produced evidence if it matches schema; otherwise fall back to collected evidence.
     evidence = data.get("evidence")
@@ -166,9 +259,17 @@ async def generate_meeting_intel(parsed: ParsedEmail) -> AnalyzeResponse:
             person_name_guess=name_guess,
             company_domain=parsed.domain,
             confidence=Confidence(**confidence),
+            company_confidence=Confidence(**_normalize_confidence(company_conf)) if isinstance(company_conf, dict) else None,
+            person_confidence=Confidence(**_normalize_confidence(person_conf)) if isinstance(person_conf, dict) else None,
+            one_minute_brief=coalesce_str(one_minute_brief),
+            questions_to_ask=coalesce_list(questions_to_ask),
+            email_openers=EmailOpeners(**email_openers) if isinstance(email_openers, dict) else EmailOpeners(formal="unknown", warm="unknown", technical="unknown"),
+            red_flags=coalesce_list(red_flags),
+            company_profile=CompanyProfile(**company_profile) if company_profile else None,
             study_of_person=StudyOfPerson(**sop),
             recommendations=Recommendations(**recs),
             evidence=evidence,
+            github_profile=GitHubProfile(**github_profile.__dict__) if github_profile else None,
         )
         _RESULT_CACHE.set(cache_key, result)
         return result
@@ -179,22 +280,35 @@ async def generate_meeting_intel(parsed: ParsedEmail) -> AnalyzeResponse:
             + "Validation error: "
             + str(ve)
         )
-        response3 = client.models.generate_content(
-            model=settings.gemini_model,
-            contents=repair_prompt,
-            config={"system_instruction": _SYSTEM, "response_mime_type": "application/json"},
-        )
+        try:
+            response3 = client.models.generate_content(
+                model=settings.gemini_model,
+                contents=repair_prompt,
+                config={"system_instruction": _SYSTEM, "response_mime_type": "application/json"},
+            )
+        except Exception as e:
+            if is_rate_limited_error(e):
+                retry_s = parse_retry_after_seconds(e)
+                raise RuntimeError(f"ANALYZE_LLM_RATE_LIMIT:{retry_s if retry_s is not None else ''}") from e
+            raise
         raw3 = getattr(response3, "text", None) or "{}"
         data3, _ = try_parse_json(raw3)
         if not isinstance(data3, dict):
             data3 = {}
 
         confidence3 = _normalize_confidence(data3.get("confidence"))
-        sop3 = data3.get("study_of_person") or {}
-        recs3 = data3.get("recommendations") or {}
+        sop3 = coalesce_dict(data3.get("study_of_person"))
+        recs3 = coalesce_dict(data3.get("recommendations"))
         evidence3 = data3.get("evidence")
         if not isinstance(evidence3, list) or not evidence3:
             evidence3 = collected_evidence
+
+        company_profile3 = coalesce_dict(data3.get("company_profile"))
+        if company_profile3:
+            company_profile3["likely_products_services"] = coalesce_list(company_profile3.get("likely_products_services"))
+            company_profile3["hiring_signals"] = coalesce_list(company_profile3.get("hiring_signals"))
+            company_profile3["recent_public_mentions"] = coalesce_list(company_profile3.get("recent_public_mentions"))
+            company_profile3["summary"] = coalesce_str(company_profile3.get("summary"))
 
         # If still invalid, this will raise (surfacing a clear 500) but should be rare.
         return AnalyzeResponse(
@@ -202,7 +316,15 @@ async def generate_meeting_intel(parsed: ParsedEmail) -> AnalyzeResponse:
             person_name_guess=name_guess,
             company_domain=parsed.domain,
             confidence=Confidence(**confidence3),
+            company_confidence=Confidence(**_normalize_confidence(data3.get("company_confidence"))) if isinstance(data3.get("company_confidence"), dict) else None,
+            person_confidence=Confidence(**_normalize_confidence(data3.get("person_confidence"))) if isinstance(data3.get("person_confidence"), dict) else None,
+            one_minute_brief=coalesce_str(data3.get("one_minute_brief")),
+            questions_to_ask=coalesce_list(data3.get("questions_to_ask")),
+            email_openers=EmailOpeners(**data3.get("email_openers")) if isinstance(data3.get("email_openers"), dict) else EmailOpeners(formal="unknown", warm="unknown", technical="unknown"),
+            red_flags=coalesce_list(data3.get("red_flags")),
+            company_profile=CompanyProfile(**company_profile3) if company_profile3 else None,
             study_of_person=StudyOfPerson(**sop3),
             recommendations=Recommendations(**recs3),
             evidence=evidence3,
+            github_profile=GitHubProfile(**github_profile.__dict__) if github_profile else None,
         )
