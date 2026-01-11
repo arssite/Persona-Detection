@@ -12,12 +12,26 @@ import { Card } from "./components/Card";
 import { GitHubCard } from "./components/GitHubCard";
 
 function App() {
+  const [inputMode, setInputMode] = useState<"email" | "name_company">("email");
+  
   const [email, setEmail] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [company, setCompany] = useState("");
+  
+  const [linkedinUrl, setLinkedinUrl] = useState("");
+  const [githubUsername, setGithubUsername] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<AnalyzeResponse | null>(null);
 
-  const canSubmit = useMemo(() => email.trim().length > 5 && email.includes("@"), [email]);
+  const canSubmit = useMemo(() => {
+    if (inputMode === "email") {
+      return email.trim().length > 5 && email.includes("@");
+    } else {
+      return firstName.trim().length >= 2 && lastName.trim().length >= 2 && company.trim().length >= 2;
+    }
+  }, [inputMode, email, firstName, lastName, company]);
 
   const [stage, setStage] = useState<string | null>(null);
 
@@ -34,7 +48,13 @@ function App() {
       const t2 = window.setTimeout(() => setStage("Scraping company website…"), 1400);
       const t3 = window.setTimeout(() => setStage("Generating meeting intelligence…"), 2100);
 
-      const res = await analyze({ email: email.trim() });
+      const res = await analyze({
+        email: inputMode === "email" ? email.trim() : null,
+        name: inputMode === "name_company" ? { first: firstName.trim(), last: lastName.trim() } : null,
+        company: inputMode === "name_company" ? company.trim() : null,
+        linkedin_url: linkedinUrl.trim() || null,
+        github_username: githubUsername.trim() || null,
+      });
       window.clearTimeout(t1);
       window.clearTimeout(t2);
       window.clearTimeout(t3);
@@ -59,14 +79,85 @@ function App() {
           Enter a corporate email. We infer meeting guidance using public web signals and a lightweight RAG-style agent.
         </p>
 
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <button
+            type="button"
+            className={inputMode === "email" ? "tab tabActive" : "tab"}
+            onClick={() => setInputMode("email")}
+          >
+            📧 Email
+          </button>
+          <button
+            type="button"
+            className={inputMode === "name_company" ? "tab tabActive" : "tab"}
+            onClick={() => setInputMode("name_company")}
+          >
+            👤 Name + Company
+          </button>
+        </div>
+      </div>
+
       <form onSubmit={onSubmit} className="topBar">
-        <input
-          className="input"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          placeholder="firstname.lastname@company.com"
-        />
-        <button disabled={!canSubmit || loading} type="submit" className="button">
+        {inputMode === "email" ? (
+          <input
+            className="input"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="firstname.lastname@company.com"
+            required
+          />
+        ) : (
+          <div style={{ display: "grid", gap: 8 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              <input
+                className="input"
+                value={firstName}
+                onChange={(e) => setFirstName(e.target.value)}
+                placeholder="First Name"
+                required
+              />
+              <input
+                className="input"
+                value={lastName}
+                onChange={(e) => setLastName(e.target.value)}
+                placeholder="Last Name"
+                required
+              />
+            </div>
+            <input
+              className="input"
+              value={company}
+              onChange={(e) => setCompany(e.target.value)}
+              placeholder="Company (e.g., OpenAI or openai.com)"
+              required
+            />
+          </div>
+        )}
+        
+        <details style={{ marginTop: 10 }}>
+          <summary style={{ cursor: "pointer", fontSize: 13, opacity: 0.8 }}>
+            + Optional: Add LinkedIn or GitHub for richer insights
+          </summary>
+          <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
+            <input
+              type="url"
+              className="input"
+              placeholder="LinkedIn URL (e.g., https://linkedin.com/in/username)"
+              value={linkedinUrl}
+              onChange={(e) => setLinkedinUrl(e.target.value)}
+            />
+            <input
+              type="text"
+              className="input"
+              placeholder="GitHub username (e.g., torvalds)"
+              value={githubUsername}
+              onChange={(e) => setGithubUsername(e.target.value)}
+            />
+          </div>
+        </details>
+        
+        <button disabled={!canSubmit || loading} type="submit" className="button" style={{ marginTop: 10 }}>
           {loading ? "Analyzing…" : "Analyze"}
         </button>
       </form>

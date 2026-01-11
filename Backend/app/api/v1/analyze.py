@@ -8,12 +8,40 @@ router = APIRouter(tags=["analyze"])
 
 @router.post("/analyze", response_model=AnalyzeResponse)
 async def analyze(req: AnalyzeRequest) -> AnalyzeResponse:
-    parsed = parse_email(req.email)
-    if not parsed.is_valid:
-        raise HTTPException(status_code=400, detail="Invalid corporate email")
+    # Path C: support name+company mode
+    if req.email:
+        # Mode 1: Email (current)
+        parsed = parse_email(req.email)
+        if not parsed.is_valid:
+            raise HTTPException(status_code=400, detail="Invalid corporate email")
+    elif req.name and req.company:
+        # Mode 2: Name + Company (Path C)
+        from app.core.company_resolver import resolve_company_domain
+        from app.core.email import ParsedEmail
+        
+        # Resolve company to domain
+        domain_info = await resolve_company_domain(req.company)
+        domain = domain_info.get('domain')
+        
+        # Create a pseudo-ParsedEmail for name+company mode
+        synthetic_email = f"{req.name.first.lower()}.{req.name.last.lower()}@{domain}"
+        parsed = ParsedEmail(
+            raw=synthetic_email,
+            is_valid=True,
+            local_part=f"{req.name.first.lower()}.{req.name.last.lower()}",
+            domain=domain,
+            guessed_first_name=req.name.first,
+            guessed_last_name=req.name.last,
+        )
+    else:
+        raise HTTPException(status_code=400, detail="Must provide: email OR (name + company)")
 
     try:
-        result = await generate_meeting_intel(parsed)
+        result = await generate_meeting_intel(
+            parsed,
+            linkedin_url=req.linkedin_url,
+            github_username=req.github_username,
+        )
         return result
     except RuntimeError as e:
         msg = str(e)

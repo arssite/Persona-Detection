@@ -7,27 +7,55 @@ This repo is intentionally **small, runnable, and demo-friendly**: one FastAPI e
 ---
 
 ## Why this is interesting (for recruiters)
-Most “persona enrichment” products either (a) rely on paid data providers, or (b) imply certainty from weak signals.
+Most persona enrichment products either (a) rely on paid data providers, or (b) imply certainty from weak signals.
 
 This MVP is different:
+- **Flexible input**: works with email, name+company, or social handles (LinkedIn/GitHub).
 - **Public-data-only** by design (no paid enrichment APIs; no authenticated scraping).
 - **Evidence-first UX**: the UI shows the exact snippets/URLs used.
 - **Confidence labeling**: outputs are framed as inference (low/medium/high with rationale).
+- **Cross-validation**: when multiple inputs provided (e.g., email + LinkedIn), system validates and boosts confidence.
 - **Pragmatic engineering**: caching + bounded crawling for stability in live demos.
 
 ---
 
-## Live demo (what you’ll see)
-Input: `"firstname.lastname@company.com"`
+## Live demo (what you'll see)
 
-Output (JSON + UI):
+### Input Options (Flexible)
+The MVP supports **multiple input modes** to accommodate different recruiting scenarios:
+
+#### **Mode 1: Email** (recommended, highest confidence)
+```
+Input: firstname.lastname@company.com
+```
+Extract: domain, name guess → scrape company site + search
+
+#### **Mode 2: Name + Company** (when you don't have email)
+```
+Input:
+  First Name: Alex
+  Last Name: Smith
+  Company: OpenAI
+```
+Extract: resolve company domain → scrape + search
+
+#### **Mode 3: Email + Social Enrichment** (richest insights)
+```
+Input:
+  Email: alex@openai.com
+  LinkedIn: https://linkedin.com/in/alex-smith-openai (optional)
+  GitHub: alexsmith (optional)
+```
+Cross-validate across sources → merged evidence
+
+### Output (JSON + UI):
 - `one_minute_brief` (quick meeting prep)
 - `company_profile` (products/services, hiring signals, public mentions)
 - `study_of_person` (likely role focus & communication style)
 - `questions_to_ask`, `email_openers`, `red_flags`
-- `recommendations` (tone, do/don’t, connecting points, agenda)
-- `confidence` + `evidence[]` (snippets + sources)
-- optional: `github_profile` (only when a profile URL is discovered via public search)
+- `recommendations` (tone, do/don't, connecting points, agenda)
+- `confidence` + `evidence[]` (snippets + sources with citations)
+- optional: `github_profile` (only when GitHub enrichment used)
 
 ### Demo video
 
@@ -209,15 +237,17 @@ Open the Vite URL (typically `http://localhost:5173`).
 ---
 
 ## Competitive landscape (what others often do)
-In the market, “persona / lead intelligence” tools tend to fall into a few patterns:
-1. **Data-provider aggregators**: rely on paid enrichment APIs and proprietary datasets.
-2. **Browser-scrape approaches**: scrape social sites (often behind auth), which raises fragility and compliance risk.
-3. **LLM-only guesswork**: produce fluent output without traceable evidence.
+In the market, persona / lead intelligence tools tend to fall into a few patterns:
+1. **Data-provider aggregators** (Clearbit, ZoomInfo): rely on paid enrichment APIs and proprietary datasets. **Require email.**
+2. **Browser-scrape approaches** (LinkedIn Sales Navigator): scrape social sites (often behind auth), which raises fragility and compliance risk. **Require paid subscriptions.**
+3. **LLM-only guesswork** (Lavender, Regie.ai): produce fluent output without traceable evidence. **Limited input flexibility.**
 
-This MVP demonstrates a safer, more transparent alternative:
-- **Evidence-traceable** outputs
-- **Confidence-aware** synthesis
-- **Public-data-only** collection
+This MVP demonstrates a safer, more transparent, **and more flexible** alternative:
+- **Multiple input modes**: email, name+company, or social handles (works when you don't have email)
+- **Evidence-traceable** outputs (UI shows exact sources)
+- **Confidence-aware** synthesis (probabilistic, not certain)
+- **Public-data-only** collection (no paid APIs, no auth scraping)
+- **Cross-validation**: when multiple sources provided, system validates and reconciles
 
 ---
 

@@ -3,9 +3,35 @@ from __future__ import annotations
 from pydantic import BaseModel, Field, ConfigDict
 
 
+class NameInput(BaseModel):
+    """Name input for Path C (name+company mode)."""
+    model_config = ConfigDict(extra="ignore")
+    first: str = Field(..., min_length=2, max_length=50)
+    last: str = Field(..., min_length=2, max_length=50)
+
+
 class AnalyzeRequest(BaseModel):
     model_config = ConfigDict(extra="ignore")
-    email: str = Field(..., examples=["firstname.lastname@company.com"])
+    
+    # Mode 1: Email (current)
+    email: str | None = Field(None, examples=["firstname.lastname@company.com"])
+    
+    # Mode 2: Name + Company (Path C)
+    name: NameInput | None = None
+    company: str | None = Field(None, min_length=2, max_length=100)
+    
+    # Optional enrichment (Path A)
+    linkedin_url: str | None = None
+    github_username: str | None = None
+    
+    def __init__(self, **data):
+        super().__init__(**data)
+        # Validation: must have email OR (name + company)
+        has_email = self.email is not None
+        has_name_company = self.name is not None and self.company is not None
+        
+        if not (has_email or has_name_company):
+            raise ValueError("Must provide: email OR (name + company)")
 
 
 class EvidenceItem(BaseModel):

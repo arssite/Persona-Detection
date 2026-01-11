@@ -19,6 +19,7 @@ from app.core.confidence import fallback_confidence
 from app.intelligence.gemini_client import get_client
 from app.core.config import get_settings
 from app.core.llm_errors import is_rate_limited_error, parse_retry_after_seconds
+from app.scraping.linkedin_snippet import fetch_linkedin_snippet
 
 
 _SYSTEM = """You are an AI assistant that creates meeting intelligence from public web signals.
@@ -71,7 +72,12 @@ from app.core.cache import TTLCache
 _RESULT_CACHE: TTLCache[AnalyzeResponse] = TTLCache(ttl_s=300.0, max_items=256)
 
 
-async def generate_meeting_intel(parsed: ParsedEmail, force_refresh: bool = False) -> AnalyzeResponse:
+async def generate_meeting_intel(
+    parsed: ParsedEmail,
+    force_refresh: bool = False,
+    linkedin_url: str | None = None,
+    github_username: str | None = None,
+) -> AnalyzeResponse:
     # MVP v0: collect lightweight public signals via web search.
     from app.search.ddg import ddg_search, results_to_evidence
 
@@ -83,6 +89,65 @@ async def generate_meeting_intel(parsed: ParsedEmail, force_refresh: bool = Fals
         return cached
 
     collected_evidence: list[dict] = []
+    
+    # Optional: LinkedIn enrichment (Path A)
+    if linkedin_url:
+        try:
+            linkedin_data = await fetch_linkedin_snippet(linkedin_url)
+            if linkedin_data:
+                headline = linkedin_data.get('headline', '')
+                snippet = linkedin_data.get('snippet', '')
+                role = linkedin_data.get('role', '')
+                company = linkedin_data.get('company', '')
+                
+                # Build rich evidence snippet
+                parts = []
+                if headline:
+                    parts.append(f"LinkedIn: {headline}")
+                if role and company:
+                    parts.append(f"Role: {role} at {company}")
+                elif snippet:
+                    parts.append(snippet)
+                
+                collected_evidence.append({
+                    'source': 'linkedin_snippet',
+                    'snippet': ' | '.join(parts) if parts else 'LinkedIn profile found',
+                    'url': linkedin_data.get('source_url'),
+                })
+        except Exception:
+            pass  # Skip if LinkedIn snippet fetch fails
+    
+    # Optional: GitHub enrichment (Path A, direct)
+    if github_username:
+        try:
+            from app.enrichment.github import fetch_github_profile
+            gh_data = await fetch_github_profile(github_username)
+            if gh_data:
+                # Format GitHub profile as evidence
+                bio = gh_data.get('bio', '')
+                company = gh_data.get('company', '')
+                location = gh_data.get('location', '')
+                top_langs = gh_data.get('top_languages', [])[:5]
+                
+                parts = []
+                parts.append(f"GitHub: @{github_username}")
+                if bio:
+                    parts.append(f"Bio: {bio}")
+                if company:
+                    parts.append(f"Company: {company}")
+                if location:
+                    parts.append(f"Location: {location}")
+                if top_langs:
+                    parts.append(f"Languages: {', '.join(top_langs)}")
+                
+                collected_evidence.append({
+                    'source': 'github_api_direct',
+                    'snippet': ' | '.join(parts),
+                    'url': f"https://github.com/{github_username}",
+                })
+        except Exception:
+            pass  # Skip if GitHub API fails
+    
     if parsed.domain:
         from app.scraping.company_site import scrape_company_site, pages_to_evidence
         from app.intelligence.evidence import dedupe_and_rank

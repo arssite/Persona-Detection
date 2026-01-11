@@ -1,6 +1,22 @@
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 
-export type AnalyzeRequest = { email: string };
+export type NameInput = {
+  first: string;
+  last: string;
+};
+
+export type AnalyzeRequest = {
+  // Mode 1: Email (required if name+company not provided)
+  email?: string | null;
+  
+  // Mode 2: Name + Company (Path C)
+  name?: NameInput | null;
+  company?: string | null;
+  
+  // Optional enrichment (Path A)
+  linkedin_url?: string | null;
+  github_username?: string | null;
+};
 
 export type EvidenceItem = {
   source: string;
