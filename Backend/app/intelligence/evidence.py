@@ -10,6 +10,9 @@ _SOURCE_WEIGHT = {
     "ddg_company": 3,
     "ddg_person": 3,
     "ddg_github": 3,
+    # Social discovery (search-snippet based)
+    "social_user": 4,
+    "social_discovered": 2,
 }
 
 

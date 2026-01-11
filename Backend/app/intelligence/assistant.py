@@ -86,7 +86,11 @@ async def bootstrap(*, email: str, agenda: AssistantAgenda, refresh_public_signa
     # Reuse existing pipeline to create a grounded snapshot.
     from app.intelligence.generate import generate_meeting_intel
 
-    snapshot: AnalyzeResponse = await generate_meeting_intel(parsed, force_refresh=refresh_public_signals)  # type: ignore[arg-type]
+    snapshot: AnalyzeResponse = await generate_meeting_intel(
+        parsed,
+        force_refresh=refresh_public_signals,
+        allow_discovery=True,
+    )  # type: ignore[arg-type]
 
     # Create session
     session = new_session(
@@ -212,7 +216,11 @@ async def chat(*, session_id: str, message: str, confirm_refresh: bool) -> Assis
         parsed = parse_email(s.email)
         from app.intelligence.generate import generate_meeting_intel
 
-        snapshot = await generate_meeting_intel(parsed, force_refresh=True)  # type: ignore[arg-type]
+        snapshot = await generate_meeting_intel(
+            parsed,
+            force_refresh=True,
+            allow_discovery=True,
+        )  # type: ignore[arg-type]
         s.analyze_snapshot = snapshot.model_dump()
 
     agenda = s.agenda

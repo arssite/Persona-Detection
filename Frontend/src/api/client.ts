@@ -8,14 +8,21 @@ export type NameInput = {
 export type AnalyzeRequest = {
   // Mode 1: Email (required if name+company not provided)
   email?: string | null;
-  
+
   // Mode 2: Name + Company (Path C)
   name?: NameInput | null;
   company?: string | null;
-  
+
   // Optional enrichment (Path A)
   linkedin_url?: string | null;
   github_username?: string | null;
+
+  // Social enrichment (snippets-only)
+  allow_discovery?: boolean;
+  instagram_url?: string | null;
+  x_url?: string | null;
+  medium_url?: string | null;
+  other_urls?: string[];
 };
 
 export type EvidenceItem = {
@@ -49,10 +56,22 @@ export type GitHubProfile = {
   top_repos: GitHubRepo[];
 };
 
+export type SocialCandidate = {
+  platform: string;
+  url: string;
+  title?: string | null;
+  snippet?: string | null;
+  confidence: number;
+  source: "discovered" | "user";
+};
+
 export type AnalyzeResponse = {
   input_email: string;
   person_name_guess?: string | null;
   company_domain?: string | null;
+
+  social_candidates?: SocialCandidate[];
+  social_selected?: SocialCandidate[];
 
   confidence: Confidence;
   company_confidence?: Confidence | null;

@@ -77,6 +77,11 @@ async def generate_meeting_intel(
     force_refresh: bool = False,
     linkedin_url: str | None = None,
     github_username: str | None = None,
+    allow_discovery: bool = True,
+    instagram_url: str | None = None,
+    x_url: str | None = None,
+    medium_url: str | None = None,
+    other_urls: list[str] | None = None,
 ) -> AnalyzeResponse:
     # MVP v0: collect lightweight public signals via web search.
     from app.search.ddg import ddg_search, results_to_evidence
@@ -89,7 +94,71 @@ async def generate_meeting_intel(
         return cached
 
     collected_evidence: list[dict] = []
-    
+
+    # Social enrichment (snippets-only). We treat user-provided URLs as higher weight evidence,
+    # and (optionally) discover additional candidates via search.
+    social_candidates = []
+    social_selected = []
+    try:
+        from app.intelligence.social_discovery import discover_social_candidates, fetch_user_profile_snippet
+
+        selected_urls: list[tuple[str, str]] = []
+        if instagram_url:
+            selected_urls.append(("instagram", instagram_url))
+        if x_url:
+            selected_urls.append(("x", x_url))
+        if medium_url:
+            selected_urls.append(("medium", medium_url))
+        if other_urls:
+            for u in other_urls:
+                if u:
+                    selected_urls.append(("website", u))
+
+        for platform, url in selected_urls:
+            title, snippet = await fetch_user_profile_snippet(url)
+            social_selected.append(
+                {
+                    "platform": platform,
+                    "url": url,
+                    "title": title,
+                    "snippet": snippet,
+                    "confidence": 1.0,
+                    "source": "user",
+                }
+            )
+            collected_evidence.append(
+                {
+                    "source": "social_user",
+                    "snippet": (snippet or title or f"User-provided {platform} profile").strip(),
+                    "url": url,
+                }
+            )
+
+        if allow_discovery:
+            name_guess = " ".join([p for p in [parsed.guessed_first_name, parsed.guessed_last_name] if p]) or None
+            # company name hint: best-effort from domain.
+            company_hint = parsed.domain.split(".")[0] if parsed.domain else None
+            discovered = await discover_social_candidates(
+                name_guess=name_guess,
+                company_domain=parsed.domain,
+                company_name_hint=company_hint,
+                max_per_platform=3,
+            )
+            social_candidates = [c.__dict__ for c in discovered]
+            # Add discovered candidates as low/medium weight evidence too.
+            for c in discovered:
+                collected_evidence.append(
+                    {
+                        "source": "social_discovered",
+                        "snippet": (c.snippet or c.title or f"Discovered {c.platform} profile").strip(),
+                        "url": c.url,
+                    }
+                )
+    except Exception:
+        # Non-fatal; proceed without social enrichment
+        social_candidates = []
+        social_selected = []
+
     # Optional: LinkedIn enrichment (Path A)
     if linkedin_url:
         try:
@@ -323,6 +392,8 @@ async def generate_meeting_intel(
             input_email=parsed.raw,
             person_name_guess=name_guess,
             company_domain=parsed.domain,
+            social_candidates=social_candidates,
+            social_selected=social_selected,
             confidence=Confidence(**confidence),
             company_confidence=Confidence(**_normalize_confidence(company_conf)) if isinstance(company_conf, dict) else None,
             person_confidence=Confidence(**_normalize_confidence(person_conf)) if isinstance(person_conf, dict) else None,
@@ -380,6 +451,8 @@ async def generate_meeting_intel(
             input_email=parsed.raw,
             person_name_guess=name_guess,
             company_domain=parsed.domain,
+            social_candidates=social_candidates,
+            social_selected=social_selected,
             confidence=Confidence(**confidence3),
             company_confidence=Confidence(**_normalize_confidence(data3.get("company_confidence"))) if isinstance(data3.get("company_confidence"), dict) else None,
             person_confidence=Confidence(**_normalize_confidence(data3.get("person_confidence"))) if isinstance(data3.get("person_confidence"), dict) else None,

@@ -12,24 +12,31 @@ class NameInput(BaseModel):
 
 class AnalyzeRequest(BaseModel):
     model_config = ConfigDict(extra="ignore")
-    
+
     # Mode 1: Email (current)
     email: str | None = Field(None, examples=["firstname.lastname@company.com"])
-    
+
     # Mode 2: Name + Company (Path C)
     name: NameInput | None = None
     company: str | None = Field(None, min_length=2, max_length=100)
-    
+
     # Optional enrichment (Path A)
     linkedin_url: str | None = None
     github_username: str | None = None
-    
+
+    # Social enrichment (snippets-based)
+    allow_discovery: bool = True
+    instagram_url: str | None = None
+    x_url: str | None = None
+    medium_url: str | None = None
+    other_urls: list[str] = []
+
     def __init__(self, **data):
         super().__init__(**data)
         # Validation: must have email OR (name + company)
         has_email = self.email is not None
         has_name_company = self.name is not None and self.company is not None
-        
+
         if not (has_email or has_name_company):
             raise ValueError("Must provide: email OR (name + company)")
 
@@ -106,11 +113,25 @@ class CompanyProfile(BaseModel):
     recent_public_mentions: list[str] = []
 
 
+class SocialCandidate(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    platform: str
+    url: str
+    title: str | None = None
+    snippet: str | None = None
+    confidence: float = 0.0
+    source: str = "discovered"  # discovered|user
+
+
 class AnalyzeResponse(BaseModel):
     model_config = ConfigDict(extra="ignore")
     input_email: str
     person_name_guess: str | None = None
     company_domain: str | None = None
+
+    # Social discovery
+    social_candidates: list[SocialCandidate] = []
+    social_selected: list[SocialCandidate] = []
 
     # Overall confidence (existing)
     confidence: Confidence

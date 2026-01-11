@@ -41,6 +41,11 @@ async def analyze(req: AnalyzeRequest) -> AnalyzeResponse:
             parsed,
             linkedin_url=req.linkedin_url,
             github_username=req.github_username,
+            allow_discovery=req.allow_discovery,
+            instagram_url=req.instagram_url,
+            x_url=req.x_url,
+            medium_url=req.medium_url,
+            other_urls=req.other_urls,
         )
         return result
     except RuntimeError as e:

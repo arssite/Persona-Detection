@@ -12,7 +12,7 @@ import { Card } from "./components/Card";
 import { GitHubCard } from "./components/GitHubCard";
 
 function App() {
-  const [inputMode, setInputMode] = useState<"email" | "name_company">("email");
+  const [inputMode, setInputMode] = useState<"email" | "name_company" | "name_email">("email");
   
   const [email, setEmail] = useState("");
   const [firstName, setFirstName] = useState("");
@@ -21,6 +21,13 @@ function App() {
   
   const [linkedinUrl, setLinkedinUrl] = useState("");
   const [githubUsername, setGithubUsername] = useState("");
+
+  // Social discovery/selection
+  const [allowDiscovery, setAllowDiscovery] = useState(true);
+  const [selectedInstagram, setSelectedInstagram] = useState<string>("");
+  const [selectedX, setSelectedX] = useState<string>("");
+  const [selectedMedium, setSelectedMedium] = useState<string>("");
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<AnalyzeResponse | null>(null);
@@ -28,9 +35,17 @@ function App() {
   const canSubmit = useMemo(() => {
     if (inputMode === "email") {
       return email.trim().length > 5 && email.includes("@");
-    } else {
-      return firstName.trim().length >= 2 && lastName.trim().length >= 2 && company.trim().length >= 2;
     }
+    if (inputMode === "name_email") {
+      return (
+        firstName.trim().length >= 2 &&
+        lastName.trim().length >= 2 &&
+        email.trim().length > 5 &&
+        email.includes("@")
+      );
+    }
+    // name_company
+    return firstName.trim().length >= 2 && lastName.trim().length >= 2 && company.trim().length >= 2;
   }, [inputMode, email, firstName, lastName, company]);
 
   const [stage, setStage] = useState<string | null>(null);
@@ -49,11 +64,19 @@ function App() {
       const t3 = window.setTimeout(() => setStage("Generating meeting intelligence…"), 2100);
 
       const res = await analyze({
-        email: inputMode === "email" ? email.trim() : null,
-        name: inputMode === "name_company" ? { first: firstName.trim(), last: lastName.trim() } : null,
+        email: inputMode === "email" || inputMode === "name_email" ? email.trim() : null,
+        name:
+          inputMode === "name_company" || inputMode === "name_email"
+            ? { first: firstName.trim(), last: lastName.trim() }
+            : null,
         company: inputMode === "name_company" ? company.trim() : null,
         linkedin_url: linkedinUrl.trim() || null,
         github_username: githubUsername.trim() || null,
+
+        allow_discovery: allowDiscovery,
+        instagram_url: selectedInstagram.trim() || null,
+        x_url: selectedX.trim() || null,
+        medium_url: selectedMedium.trim() || null,
       });
       window.clearTimeout(t1);
       window.clearTimeout(t2);
@@ -95,6 +118,13 @@ function App() {
           >
             👤 Name + Company
           </button>
+          <button
+            type="button"
+            className={inputMode === "name_email" ? "tab tabActive" : "tab"}
+            onClick={() => setInputMode("name_email")}
+          >
+            👤 Name + Email
+          </button>
         </div>
       </div>
 
@@ -107,6 +137,32 @@ function App() {
             placeholder="firstname.lastname@company.com"
             required
           />
+        ) : inputMode === "name_email" ? (
+          <div style={{ display: "grid", gap: 8 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              <input
+                className="input"
+                value={firstName}
+                onChange={(e) => setFirstName(e.target.value)}
+                placeholder="First Name"
+                required
+              />
+              <input
+                className="input"
+                value={lastName}
+                onChange={(e) => setLastName(e.target.value)}
+                placeholder="Last Name"
+                required
+              />
+            </div>
+            <input
+              className="input"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="firstname.lastname@company.com"
+              required
+            />
+          </div>
         ) : (
           <div style={{ display: "grid", gap: 8 }}>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
@@ -137,7 +193,7 @@ function App() {
         
         <details style={{ marginTop: 10 }}>
           <summary style={{ cursor: "pointer", fontSize: 13, opacity: 0.8 }}>
-            + Optional: Add LinkedIn or GitHub for richer insights
+            + Optional: Add LinkedIn, GitHub, or social profiles
           </summary>
           <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
             <input
@@ -153,6 +209,37 @@ function App() {
               placeholder="GitHub username (e.g., torvalds)"
               value={githubUsername}
               onChange={(e) => setGithubUsername(e.target.value)}
+            />
+
+            <label style={{ display: "flex", gap: 10, alignItems: "center", fontSize: 13, opacity: 0.9 }}>
+              <input
+                type="checkbox"
+                checked={allowDiscovery}
+                onChange={(e) => setAllowDiscovery(e.target.checked)}
+              />
+              Auto-discover public social profiles (via search snippets)
+            </label>
+
+            <input
+              type="url"
+              className="input"
+              placeholder="Instagram profile URL (optional)"
+              value={selectedInstagram}
+              onChange={(e) => setSelectedInstagram(e.target.value)}
+            />
+            <input
+              type="url"
+              className="input"
+              placeholder="X/Twitter profile URL (optional)"
+              value={selectedX}
+              onChange={(e) => setSelectedX(e.target.value)}
+            />
+            <input
+              type="url"
+              className="input"
+              placeholder="Medium profile URL (optional)"
+              value={selectedMedium}
+              onChange={(e) => setSelectedMedium(e.target.value)}
             />
           </div>
         </details>
@@ -230,6 +317,74 @@ function App() {
           <Card title="One-minute brief">
             <div>{data.one_minute_brief ?? "unknown"}</div>
           </Card>
+
+          {(data.social_candidates?.length ?? 0) > 0 ? (
+            <section className="card">
+              <div className="cardTitle">Discovered social profiles (confirm)</div>
+              <div className="smallText" style={{ marginBottom: 10 }}>
+                These are found via search snippets and may be ambiguous. Select the correct profile(s) and click Analyze
+                again.
+              </div>
+
+              {(["instagram", "x", "medium"] as const).map((platform) => {
+                const candidates = (data.social_candidates ?? []).filter((c) => c.platform === platform);
+                if (candidates.length === 0) return null;
+                const current = platform === "instagram" ? selectedInstagram : platform === "x" ? selectedX : selectedMedium;
+
+                return (
+                  <div key={platform} style={{ marginBottom: 14 }}>
+                    <div className="kvLabel" style={{ textTransform: "capitalize" }}>
+                      {platform}
+                    </div>
+                    <div style={{ display: "grid", gap: 8, marginTop: 6 }}>
+                      <label style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                        <input
+                          type="radio"
+                          name={`pick-${platform}`}
+                          checked={!current}
+                          onChange={() => {
+                            if (platform === "instagram") setSelectedInstagram("");
+                            if (platform === "x") setSelectedX("");
+                            if (platform === "medium") setSelectedMedium("");
+                          }}
+                        />
+                        <span className="smallText">None / don’t use</span>
+                      </label>
+                      {candidates.map((c) => (
+                        <label key={c.url} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                          <input
+                            type="radio"
+                            name={`pick-${platform}`}
+                            checked={current === c.url}
+                            onChange={() => {
+                              if (platform === "instagram") setSelectedInstagram(c.url);
+                              if (platform === "x") setSelectedX(c.url);
+                              if (platform === "medium") setSelectedMedium(c.url);
+                            }}
+                          />
+                          <span>
+                            <div style={{ fontSize: 12, opacity: 0.8 }}>
+                              confidence: {(c.confidence ?? 0).toFixed(2)}
+                            </div>
+                            <div style={{ marginTop: 2 }}>
+                              <a href={c.url} target="_blank" rel="noreferrer" style={{ fontSize: 12 }}>
+                                {c.url}
+                              </a>
+                            </div>
+                            {c.snippet ? <div style={{ marginTop: 4 }}>{c.snippet}</div> : null}
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+
+              <div className="smallText" style={{ marginTop: 8 }}>
+                Current selections: instagram={selectedInstagram || "—"} | x={selectedX || "—"} | medium={selectedMedium || "—"}
+              </div>
+            </section>
+          ) : null}
 
           <section className="card">
             <div className="cardTitle">Company profile</div>
