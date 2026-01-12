@@ -10,13 +10,18 @@ from app.schemas.meeting_intel import (
     Recommendations,
     StudyOfPerson,
     GitHubProfile,
+    InstagramProfile,
+    MediumProfile,
+    MediumStory,
+    XProfile,
     CompanyProfile,
     EmailOpeners,
 )
 from app.intelligence.defaults import coalesce_list, coalesce_str, coalesce_dict
 from app.intelligence.json_guard import try_parse_json
 from app.core.confidence import fallback_confidence
-from app.intelligence.gemini_client import get_client
+from app.intelligence.gemini_client import get_client as get_gemini_client
+from app.intelligence.groq_client import groq_generate_json
 from app.core.config import get_settings
 from app.core.llm_errors import is_rate_limited_error, parse_retry_after_seconds
 from app.scraping.linkedin_snippet import fetch_linkedin_snippet
@@ -82,6 +87,8 @@ async def generate_meeting_intel(
     x_url: str | None = None,
     medium_url: str | None = None,
     other_urls: list[str] | None = None,
+    person_name_hint: str | None = None,
+    company_name_hint: str | None = None,
 ) -> AnalyzeResponse:
     # MVP v0: collect lightweight public signals via web search.
     from app.search.ddg import ddg_search, results_to_evidence
@@ -135,9 +142,10 @@ async def generate_meeting_intel(
             )
 
         if allow_discovery:
-            name_guess = " ".join([p for p in [parsed.guessed_first_name, parsed.guessed_last_name] if p]) or None
-            # company name hint: best-effort from domain.
-            company_hint = parsed.domain.split(".")[0] if parsed.domain else None
+            # Prefer explicit request hints; fall back to parsed email guesses.
+            name_guess = person_name_hint or (" ".join([p for p in [parsed.guessed_first_name, parsed.guessed_last_name] if p]) or None)
+            # Prefer the explicit company name from request; fall back to domain stem.
+            company_hint = company_name_hint or (parsed.domain.split(".")[0] if parsed.domain else None)
             discovered = await discover_social_candidates(
                 name_guess=name_guess,
                 company_domain=parsed.domain,
@@ -275,22 +283,120 @@ async def generate_meeting_intel(
     except Exception:
         github_profile = None
 
-    client = get_client()
+    # Social media profile enrichment (scraping)
+    instagram_profile = None
+    medium_profile = None
+    x_profile = None
+    
     try:
-        response = client.models.generate_content(
-            model=settings.gemini_model,
-            contents=_prompt(parsed, collected_evidence),
-            config={"system_instruction": _SYSTEM, "response_mime_type": "application/json"},
+        from app.scraping.social_media import (
+            scrape_instagram_profile,
+            scrape_medium_profile,
+            scrape_x_profile,
         )
+        
+        # Scrape Instagram if user provided URL
+        if instagram_url:
+            try:
+                insta_data = await scrape_instagram_profile(instagram_url)
+                if insta_data:
+                    instagram_profile = insta_data
+                    # Add enriched evidence
+                    parts = [f"Instagram: @{insta_data.username}"]
+                    if insta_data.full_name:
+                        parts.append(f"Name: {insta_data.full_name}")
+                    if insta_data.bio:
+                        parts.append(f"Bio: {insta_data.bio}")
+                    if insta_data.followers_count:
+                        parts.append(f"Followers: {insta_data.followers_count:,}")
+                    
+                    collected_evidence.append({
+                        'source': 'instagram_profile',
+                        'snippet': ' | '.join(parts),
+                        'url': instagram_url,
+                    })
+            except Exception as e:
+                print(f"Instagram scraping failed: {e}")
+        
+        # Scrape Medium if user provided URL
+        if medium_url:
+            try:
+                medium_data = await scrape_medium_profile(medium_url)
+                if medium_data:
+                    medium_profile = medium_data
+                    # Add enriched evidence
+                    parts = [f"Medium: @{medium_data.username}"]
+                    if medium_data.name:
+                        parts.append(f"Name: {medium_data.name}")
+                    if medium_data.bio:
+                        parts.append(f"Bio: {medium_data.bio}")
+                    if medium_data.recent_stories:
+                        parts.append(f"Stories: {len(medium_data.recent_stories)}")
+                    
+                    collected_evidence.append({
+                        'source': 'medium_profile',
+                        'snippet': ' | '.join(parts),
+                        'url': medium_url,
+                    })
+            except Exception as e:
+                print(f"Medium scraping failed: {e}")
+        
+        # Scrape X/Twitter if user provided URL
+        if x_url:
+            try:
+                x_data = await scrape_x_profile(x_url)
+                if x_data:
+                    x_profile = x_data
+                    # Add enriched evidence
+                    parts = [f"X/Twitter: @{x_data.username}"]
+                    if x_data.name:
+                        parts.append(f"Name: {x_data.name}")
+                    if x_data.bio:
+                        parts.append(f"Bio: {x_data.bio}")
+                    if x_data.followers_count:
+                        parts.append(f"Followers: {x_data.followers_count:,}")
+                    
+                    collected_evidence.append({
+                        'source': 'x_profile',
+                        'snippet': ' | '.join(parts),
+                        'url': x_url,
+                    })
+            except Exception as e:
+                print(f"X/Twitter scraping failed: {e}")
+                
     except Exception as e:
-        # Bubble up a stable sentinel so the API layer can map it to HTTP 429.
-        if is_rate_limited_error(e):
-            retry_s = parse_retry_after_seconds(e)
-            raise RuntimeError(f"ANALYZE_LLM_RATE_LIMIT:{retry_s if retry_s is not None else ''}") from e
-        raise
+        print(f"Social media scraping module error: {e}")
 
-    # google-genai may return response.text as JSON when response_mime_type is set.
-    raw = getattr(response, "text", None) or "{}"
+    # Choose LLM provider based on config
+    if settings.llm_provider == "groq":
+        # Use Groq for faster inference and better rate limits
+        try:
+            prompt_text = _prompt(parsed, collected_evidence)
+            full_prompt = f"{_SYSTEM}\n\n{prompt_text}"
+            data = groq_generate_json(full_prompt, temperature=0.7, max_tokens=4096)
+            raw = json.dumps(data)
+        except Exception as e:
+            if "rate_limit" in str(e).lower():
+                raise RuntimeError(f"ANALYZE_LLM_RATE_LIMIT:60") from e
+            raise
+    else:
+        # Use Gemini (original behavior)
+        client = get_gemini_client()
+        try:
+            response = client.models.generate_content(
+                model=settings.gemini_model,
+                contents=_prompt(parsed, collected_evidence),
+                config={"system_instruction": _SYSTEM, "response_mime_type": "application/json"},
+            )
+        except Exception as e:
+            # Bubble up a stable sentinel so the API layer can map it to HTTP 429.
+            if is_rate_limited_error(e):
+                retry_s = parse_retry_after_seconds(e)
+                raise RuntimeError(f"ANALYZE_LLM_RATE_LIMIT:{retry_s if retry_s is not None else ''}") from e
+            raise
+
+        # google-genai may return response.text as JSON when response_mime_type is set.
+        raw = getattr(response, "text", None) or "{}"
 
     data, parse_err = try_parse_json(raw)
     if data is None:
@@ -301,18 +407,30 @@ async def generate_meeting_intel(
             + str(parse_err)
             + "). Return ONLY valid JSON matching the required schema."
         )
-        try:
-            response2 = client.models.generate_content(
-                model=settings.gemini_model,
-                contents=repair_prompt,
-                config={"system_instruction": _SYSTEM, "response_mime_type": "application/json"},
-            )
-        except Exception as e:
-            if is_rate_limited_error(e):
-                retry_s = parse_retry_after_seconds(e)
-                raise RuntimeError(f"ANALYZE_LLM_RATE_LIMIT:{retry_s if retry_s is not None else ''}") from e
-            raise
-        raw2 = getattr(response2, "text", None) or "{}"
+        
+        if settings.llm_provider == "groq":
+            try:
+                full_repair = f"{_SYSTEM}\n\n{repair_prompt}"
+                data = groq_generate_json(full_repair, temperature=0.7, max_tokens=4096)
+                raw2 = json.dumps(data)
+            except Exception as e:
+                if "rate_limit" in str(e).lower():
+                    raise RuntimeError(f"ANALYZE_LLM_RATE_LIMIT:60") from e
+                raise
+        else:
+            try:
+                response2 = client.models.generate_content(
+                    model=settings.gemini_model,
+                    contents=repair_prompt,
+                    config={"system_instruction": _SYSTEM, "response_mime_type": "application/json"},
+                )
+            except Exception as e:
+                if is_rate_limited_error(e):
+                    retry_s = parse_retry_after_seconds(e)
+                    raise RuntimeError(f"ANALYZE_LLM_RATE_LIMIT:{retry_s if retry_s is not None else ''}") from e
+                raise
+            raw2 = getattr(response2, "text", None) or "{}"
+        
         data, _ = try_parse_json(raw2)
 
     if data is None:
@@ -406,6 +524,9 @@ async def generate_meeting_intel(
             recommendations=Recommendations(**recs),
             evidence=evidence,
             github_profile=GitHubProfile(**github_profile.__dict__) if github_profile else None,
+            instagram_profile=InstagramProfile(**instagram_profile.__dict__) if instagram_profile else None,
+            medium_profile=MediumProfile(**medium_profile.__dict__) if medium_profile else None,
+            x_profile=XProfile(**x_profile.__dict__) if x_profile else None,
         )
         _RESULT_CACHE.set(cache_key, result)
         return result
@@ -416,18 +537,30 @@ async def generate_meeting_intel(
             + "Validation error: "
             + str(ve)
         )
-        try:
-            response3 = client.models.generate_content(
-                model=settings.gemini_model,
-                contents=repair_prompt,
-                config={"system_instruction": _SYSTEM, "response_mime_type": "application/json"},
-            )
-        except Exception as e:
-            if is_rate_limited_error(e):
-                retry_s = parse_retry_after_seconds(e)
-                raise RuntimeError(f"ANALYZE_LLM_RATE_LIMIT:{retry_s if retry_s is not None else ''}") from e
-            raise
-        raw3 = getattr(response3, "text", None) or "{}"
+        
+        if settings.llm_provider == "groq":
+            try:
+                full_repair = f"{_SYSTEM}\n\n{repair_prompt}"
+                data3 = groq_generate_json(full_repair, temperature=0.7, max_tokens=4096)
+                raw3 = json.dumps(data3)
+            except Exception as e:
+                if "rate_limit" in str(e).lower():
+                    raise RuntimeError(f"ANALYZE_LLM_RATE_LIMIT:60") from e
+                raise
+        else:
+            try:
+                response3 = client.models.generate_content(
+                    model=settings.gemini_model,
+                    contents=repair_prompt,
+                    config={"system_instruction": _SYSTEM, "response_mime_type": "application/json"},
+                )
+            except Exception as e:
+                if is_rate_limited_error(e):
+                    retry_s = parse_retry_after_seconds(e)
+                    raise RuntimeError(f"ANALYZE_LLM_RATE_LIMIT:{retry_s if retry_s is not None else ''}") from e
+                raise
+            raw3 = getattr(response3, "text", None) or "{}"
+        
         data3, _ = try_parse_json(raw3)
         if not isinstance(data3, dict):
             data3 = {}
@@ -465,4 +598,7 @@ async def generate_meeting_intel(
             recommendations=Recommendations(**recs3),
             evidence=evidence3,
             github_profile=GitHubProfile(**github_profile.__dict__) if github_profile else None,
+            instagram_profile=InstagramProfile(**instagram_profile.__dict__) if instagram_profile else None,
+            medium_profile=MediumProfile(**medium_profile.__dict__) if medium_profile else None,
+            x_profile=XProfile(**x_profile.__dict__) if x_profile else None,
         )

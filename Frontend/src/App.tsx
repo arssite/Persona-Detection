@@ -10,6 +10,9 @@ import { BubbleLoader } from "./components/BubbleLoader";
 import { UseCasesRotator } from "./components/UseCasesRotator";
 import { Card } from "./components/Card";
 import { GitHubCard } from "./components/GitHubCard";
+import InstagramCard from "./components/InstagramCard";
+import MediumCard from "./components/MediumCard";
+import XCard from "./components/XCard";
 
 function App() {
   const [inputMode, setInputMode] = useState<"email" | "name_company" | "name_email">("email");
@@ -318,6 +321,66 @@ function App() {
             <div>{data.one_minute_brief ?? "unknown"}</div>
           </Card>
 
+          {(data.social_selected?.length ?? 0) > 0 || (data.social_candidates?.length ?? 0) > 0 ? (
+            <section className="card">
+              <div className="cardTitle">Social Profiles</div>
+
+              {(data.social_selected?.length ?? 0) > 0 ? (
+                <>
+                  <div className="kvLabel">Selected (user-provided / confirmed)</div>
+                  <ul className="list">
+                    {(data.social_selected ?? []).map((s) => (
+                      <li key={`sel-${s.platform}-${s.url}`} style={{ marginBottom: 8 }}>
+                        <strong style={{ textTransform: "capitalize" }}>{s.platform}:</strong>{" "}
+                        <a href={s.url} target="_blank" rel="noreferrer" style={{ fontSize: 12 }}>
+                          {s.url}
+                        </a>
+                        {s.snippet ? <div style={{ marginTop: 4 }}>{s.snippet}</div> : null}
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              ) : (
+                <div className="smallText">No social profiles selected yet.</div>
+              )}
+
+              {(data.social_candidates?.length ?? 0) > 0 ? (
+                <>
+                  <div style={{ height: 10 }} />
+                  <div className="kvLabel">Discovered candidates (snippets)</div>
+                  {(["instagram", "x", "medium"] as const).map((platform) => {
+                    const candidates = (data.social_candidates ?? []).filter((c) => c.platform === platform);
+                    if (candidates.length === 0) return null;
+                    return (
+                      <div key={`sum-${platform}`} style={{ marginTop: 10 }}>
+                        <div className="smallText" style={{ fontWeight: 700, textTransform: "capitalize" }}>
+                          {platform}
+                        </div>
+                        <ul className="list">
+                          {candidates.slice(0, 3).map((c) => (
+                            <li key={`cand-${c.url}`} style={{ marginBottom: 8 }}>
+                              <div style={{ fontSize: 12, opacity: 0.8 }}>
+                                confidence: {(c.confidence ?? 0).toFixed(2)}
+                              </div>
+                              <a href={c.url} target="_blank" rel="noreferrer" style={{ fontSize: 12 }}>
+                                {c.url}
+                              </a>
+                              {c.snippet ? <div style={{ marginTop: 4 }}>{c.snippet}</div> : null}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    );
+                  })}
+
+                  <div className="smallText" style={{ marginTop: 8 }}>
+                    To confirm a candidate, use the “Discovered social profiles (confirm)” section below and click Analyze again.
+                  </div>
+                </>
+              ) : null}
+            </section>
+          ) : null}
+
           {(data.social_candidates?.length ?? 0) > 0 ? (
             <section className="card">
               <div className="cardTitle">Discovered social profiles (confirm)</div>
@@ -472,7 +535,73 @@ function App() {
             </ul>
           </section>
 
-          {data.github_profile ? <GitHubCard profile={data.github_profile} /> : null}
+          {/* LinkedIn panel (snippets/evidence-based) */}
+          {data.evidence?.some((e) => (e.url || "").includes("linkedin.com")) ? (
+            <section className="card">
+              <div className="cardTitle">LinkedIn (public snippets)</div>
+              <ul className="list">
+                {data.evidence
+                  .filter((e) => (e.url || "").includes("linkedin.com"))
+                  .slice(0, 5)
+                  .map((e, i) => (
+                    <li key={`li-${i}`} style={{ marginBottom: 10 }}>
+                      <div style={{ marginTop: 6 }}>{e.snippet}</div>
+                      {e.url ? (
+                        <div style={{ marginTop: 4 }}>
+                          <a href={e.url} target="_blank" rel="noreferrer" style={{ fontSize: 12 }}>
+                            {e.url}
+                          </a>
+                        </div>
+                      ) : null}
+                    </li>
+                  ))}
+              </ul>
+            </section>
+          ) : null}
+
+          {/* GitHub panel */}
+          {data.github_profile ? (
+            <GitHubCard profile={data.github_profile} />
+          ) : data.evidence?.some((e) => (e.url || "").includes("github.com")) ? (
+            <section className="card">
+              <div className="cardTitle">GitHub (public snippets)</div>
+              <div className="smallText" style={{ marginBottom: 10 }}>
+                GitHub API enrichment is unavailable right now; showing snippet-based evidence instead.
+              </div>
+              <ul className="list">
+                {data.evidence
+                  .filter((e) => (e.url || "").includes("github.com"))
+                  .slice(0, 5)
+                  .map((e, i) => (
+                    <li key={`gh-${i}`} style={{ marginBottom: 10 }}>
+                      <div style={{ marginTop: 6 }}>{e.snippet}</div>
+                      {e.url ? (
+                        <div style={{ marginTop: 4 }}>
+                          <a href={e.url} target="_blank" rel="noreferrer" style={{ fontSize: 12 }}>
+                            {e.url}
+                          </a>
+                        </div>
+                      ) : null}
+                    </li>
+                  ))}
+              </ul>
+            </section>
+          ) : null}
+
+          {/* Instagram panel */}
+          {data.instagram_profile ? (
+            <InstagramCard profile={data.instagram_profile} />
+          ) : null}
+
+          {/* Medium panel */}
+          {data.medium_profile ? (
+            <MediumCard profile={data.medium_profile} />
+          ) : null}
+
+          {/* X/Twitter panel */}
+          {data.x_profile ? (
+            <XCard profile={data.x_profile} />
+          ) : null}
 
           <section className="card">
             <div className="cardTitle">Recommendations</div>

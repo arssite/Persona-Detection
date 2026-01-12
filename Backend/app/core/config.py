@@ -16,6 +16,11 @@ class Settings(BaseSettings):
     # Endpoints that need it should error clearly.
     gemini_api_key: str | None = None
     gemini_model: str = "gemini-2.5-flash"
+    
+    # Groq configuration (faster, better free tier)
+    groq_api_key: str | None = None
+    groq_model: str = "llama-3.3-70b-versatile"  # Best model for complex reasoning
+    llm_provider: str = "groq"  # "gemini" or "groq"
 
 
 @lru_cache

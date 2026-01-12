@@ -98,6 +98,53 @@ class GitHubProfile(BaseModel):
     top_repos: list[GitHubRepo] = []
 
 
+class InstagramProfile(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    username: str
+    url: str
+    full_name: str | None = None
+    bio: str | None = None
+    followers_count: int | None = None
+    following_count: int | None = None
+    posts_count: int | None = None
+    is_verified: bool = False
+    profile_pic_url: str | None = None
+    is_private: bool = False
+
+
+class MediumStory(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    title: str | None = None
+    url: str | None = None
+
+
+class MediumProfile(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    username: str
+    url: str
+    name: str | None = None
+    bio: str | None = None
+    followers_count: int | None = None
+    following_count: int | None = None
+    profile_image_url: str | None = None
+    recent_stories: list[MediumStory] = []
+
+
+class XProfile(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    username: str
+    url: str
+    name: str | None = None
+    bio: str | None = None
+    followers_count: int | None = None
+    following_count: int | None = None
+    tweets_count: int | None = None
+    is_verified: bool = False
+    location: str | None = None
+    website: str | None = None
+    joined_date: str | None = None
+
+
 class EmailOpeners(BaseModel):
     model_config = ConfigDict(extra="ignore")
     formal: str | None = None
@@ -153,3 +200,6 @@ class AnalyzeResponse(BaseModel):
 
     # Optional public enrichment
     github_profile: GitHubProfile | None = None
+    instagram_profile: InstagramProfile | None = None
+    medium_profile: MediumProfile | None = None
+    x_profile: XProfile | None = None

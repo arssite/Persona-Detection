@@ -7,7 +7,8 @@ from typing import Any
 from app.core.email import parse_email
 from app.core.config import get_settings
 from app.core.llm_errors import is_rate_limited_error, parse_retry_after_seconds
-from app.intelligence.gemini_client import get_client
+from app.intelligence.gemini_client import get_client as get_gemini_client
+from app.intelligence.groq_client import groq_chat, groq_generate_json
 from app.intelligence.json_guard import try_parse_json
 from app.schemas.assistant import (
     AssistantAgenda,
@@ -90,6 +91,8 @@ async def bootstrap(*, email: str, agenda: AssistantAgenda, refresh_public_signa
         parsed,
         force_refresh=refresh_public_signals,
         allow_discovery=True,
+        person_name_hint=None,
+        company_name_hint=None,
     )  # type: ignore[arg-type]
 
     # Create session
@@ -137,29 +140,26 @@ Rules:
 """
 
     settings = get_settings()
-    client = get_client()
-    try:
-        resp = client.models.generate_content(
-            model=settings.gemini_model,
-            contents=prompt,
-            config={"system_instruction": _SYSTEM, "response_mime_type": "application/json"},
-        )
-    except Exception as e:
-        msg = str(e)
-        if is_rate_limited_error(e):
-            retry_s = parse_retry_after_seconds(e)
-            raise RuntimeError(f"ASSISTANT_LLM_RATE_LIMIT:{retry_s if retry_s is not None else ''}") from e
-        if "UNAVAILABLE" in msg or "503" in msg or "overloaded" in msg.lower():
-            raise RuntimeError("ASSISTANT_LLM_UNAVAILABLE") from e
-        raise
-
-    raw = getattr(resp, "text", None) or "{}"
-    data, err = try_parse_json(raw)
-    if data is None:
+    
+    if settings.llm_provider == "groq":
+        # Use Groq for bootstrap
         try:
-            resp2 = client.models.generate_content(
+            full_prompt = f"{_SYSTEM}\n\n{prompt}"
+            data = groq_generate_json(full_prompt, temperature=0.7, max_tokens=3072)
+        except Exception as e:
+            msg = str(e)
+            if "rate_limit" in msg.lower():
+                raise RuntimeError(f"ASSISTANT_LLM_RATE_LIMIT:60") from e
+            if "unavailable" in msg.lower() or "503" in msg:
+                raise RuntimeError("ASSISTANT_LLM_UNAVAILABLE") from e
+            raise
+    else:
+        # Use Gemini for bootstrap
+        client = get_gemini_client()
+        try:
+            resp = client.models.generate_content(
                 model=settings.gemini_model,
-                contents=prompt + f"\n\nReturn ONLY valid JSON. Previous JSON error: {err}",
+                contents=prompt,
                 config={"system_instruction": _SYSTEM, "response_mime_type": "application/json"},
             )
         except Exception as e:
@@ -170,7 +170,25 @@ Rules:
             if "UNAVAILABLE" in msg or "503" in msg or "overloaded" in msg.lower():
                 raise RuntimeError("ASSISTANT_LLM_UNAVAILABLE") from e
             raise
-        data, _ = try_parse_json(getattr(resp2, "text", None) or "{}")
+
+        raw = getattr(resp, "text", None) or "{}"
+        data, err = try_parse_json(raw)
+        if data is None:
+            try:
+                resp2 = client.models.generate_content(
+                    model=settings.gemini_model,
+                    contents=prompt + f"\n\nReturn ONLY valid JSON. Previous JSON error: {err}",
+                    config={"system_instruction": _SYSTEM, "response_mime_type": "application/json"},
+                )
+            except Exception as e:
+                msg = str(e)
+                if is_rate_limited_error(e):
+                    retry_s = parse_retry_after_seconds(e)
+                    raise RuntimeError(f"ASSISTANT_LLM_RATE_LIMIT:{retry_s if retry_s is not None else ''}") from e
+                if "UNAVAILABLE" in msg or "503" in msg or "overloaded" in msg.lower():
+                    raise RuntimeError("ASSISTANT_LLM_UNAVAILABLE") from e
+                raise
+            data, _ = try_parse_json(getattr(resp2, "text", None) or "{}")
     if not isinstance(data, dict):
         data = {}
 
@@ -220,6 +238,8 @@ async def chat(*, session_id: str, message: str, confirm_refresh: bool) -> Assis
             parsed,
             force_refresh=True,
             allow_discovery=True,
+            person_name_hint=None,
+            company_name_hint=None,
         )  # type: ignore[arg-type]
         s.analyze_snapshot = snapshot.model_dump()
 
@@ -262,30 +282,27 @@ Rules:
 """
 
     settings = get_settings()
-    client = get_client()
 
-    try:
-        resp = client.models.generate_content(
-            model=settings.gemini_model,
-            contents=prompt,
-            config={"system_instruction": _SYSTEM, "response_mime_type": "application/json"},
-        )
-    except Exception as e:
-        msg = str(e)
-        if is_rate_limited_error(e):
-            retry_s = parse_retry_after_seconds(e)
-            raise RuntimeError(f"ASSISTANT_LLM_RATE_LIMIT:{retry_s if retry_s is not None else ''}") from e
-        if "UNAVAILABLE" in msg or "503" in msg or "overloaded" in msg.lower():
-            raise RuntimeError("ASSISTANT_LLM_UNAVAILABLE") from e
-        raise
-
-    raw = getattr(resp, "text", None) or "{}"
-    data, err = try_parse_json(raw)
-    if data is None:
+    if settings.llm_provider == "groq":
+        # Use Groq for chat
         try:
-            resp2 = client.models.generate_content(
+            full_prompt = f"{_SYSTEM}\n\n{prompt}"
+            data = groq_generate_json(full_prompt, temperature=0.7, max_tokens=2048)
+        except Exception as e:
+            msg = str(e)
+            if "rate_limit" in msg.lower():
+                raise RuntimeError(f"ASSISTANT_LLM_RATE_LIMIT:60") from e
+            if "unavailable" in msg.lower() or "503" in msg:
+                raise RuntimeError("ASSISTANT_LLM_UNAVAILABLE") from e
+            raise
+    else:
+        # Use Gemini for chat
+        client = get_gemini_client()
+
+        try:
+            resp = client.models.generate_content(
                 model=settings.gemini_model,
-                contents=prompt + f"\n\nReturn ONLY valid JSON. Previous JSON error: {err}",
+                contents=prompt,
                 config={"system_instruction": _SYSTEM, "response_mime_type": "application/json"},
             )
         except Exception as e:
@@ -296,7 +313,25 @@ Rules:
             if "UNAVAILABLE" in msg or "503" in msg or "overloaded" in msg.lower():
                 raise RuntimeError("ASSISTANT_LLM_UNAVAILABLE") from e
             raise
-        data, _ = try_parse_json(getattr(resp2, "text", None) or "{}")
+
+        raw = getattr(resp, "text", None) or "{}"
+        data, err = try_parse_json(raw)
+        if data is None:
+            try:
+                resp2 = client.models.generate_content(
+                    model=settings.gemini_model,
+                    contents=prompt + f"\n\nReturn ONLY valid JSON. Previous JSON error: {err}",
+                    config={"system_instruction": _SYSTEM, "response_mime_type": "application/json"},
+                )
+            except Exception as e:
+                msg = str(e)
+                if is_rate_limited_error(e):
+                    retry_s = parse_retry_after_seconds(e)
+                    raise RuntimeError(f"ASSISTANT_LLM_RATE_LIMIT:{retry_s if retry_s is not None else ''}") from e
+                if "UNAVAILABLE" in msg or "503" in msg or "overloaded" in msg.lower():
+                    raise RuntimeError("ASSISTANT_LLM_UNAVAILABLE") from e
+                raise
+            data, _ = try_parse_json(getattr(resp2, "text", None) or "{}")
     if not isinstance(data, dict):
         data = {}
 

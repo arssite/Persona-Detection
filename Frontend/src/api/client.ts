@@ -56,6 +56,49 @@ export type GitHubProfile = {
   top_repos: GitHubRepo[];
 };
 
+export type InstagramProfile = {
+  username: string;
+  url: string;
+  full_name?: string | null;
+  bio?: string | null;
+  followers_count?: number | null;
+  following_count?: number | null;
+  posts_count?: number | null;
+  is_verified?: boolean;
+  profile_pic_url?: string | null;
+  is_private?: boolean;
+};
+
+export type MediumStory = {
+  title?: string | null;
+  url?: string | null;
+};
+
+export type MediumProfile = {
+  username: string;
+  url: string;
+  name?: string | null;
+  bio?: string | null;
+  followers_count?: number | null;
+  following_count?: number | null;
+  profile_image_url?: string | null;
+  recent_stories?: MediumStory[];
+};
+
+export type XProfile = {
+  username: string;
+  url: string;
+  name?: string | null;
+  bio?: string | null;
+  followers_count?: number | null;
+  following_count?: number | null;
+  tweets_count?: number | null;
+  is_verified?: boolean;
+  location?: string | null;
+  website?: string | null;
+  joined_date?: string | null;
+};
+
 export type SocialCandidate = {
   platform: string;
   url: string;
@@ -108,6 +151,9 @@ export type AnalyzeResponse = {
 
   evidence: EvidenceItem[];
   github_profile?: GitHubProfile | null;
+  instagram_profile?: InstagramProfile | null;
+  medium_profile?: MediumProfile | null;
+  x_profile?: XProfile | null;
 };
 
 export async function analyze(req: AnalyzeRequest): Promise<AnalyzeResponse> {

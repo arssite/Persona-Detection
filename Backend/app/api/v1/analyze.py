@@ -46,6 +46,8 @@ async def analyze(req: AnalyzeRequest) -> AnalyzeResponse:
             x_url=req.x_url,
             medium_url=req.medium_url,
             other_urls=req.other_urls,
+            person_name_hint=(f"{req.name.first} {req.name.last}" if req.name else None),
+            company_name_hint=req.company,
         )
         return result
     except RuntimeError as e:
